@@ -35,6 +35,11 @@ public class LongMethodRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.80; // line count is objective, reliably identifies long methods
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isCodeFile(filepath)) return noMatch();
 

@@ -40,6 +40,11 @@ public class HighIORule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.75; // IO in loop is a strong performance signal
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 

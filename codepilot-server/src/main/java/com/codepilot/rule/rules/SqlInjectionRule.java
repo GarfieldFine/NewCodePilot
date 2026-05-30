@@ -44,6 +44,11 @@ public class SqlInjectionRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.55; // string concat is not always SQL injection
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isRelevantFile(filepath)) return noMatch();
 

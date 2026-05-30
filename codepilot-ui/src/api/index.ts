@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, AnalysisResult, PrAnalyzeRequest, PrDetail } from '@/types'
+import type { ApiResponse, AnalysisResult, PrAnalyzeRequest, PrDetail, FeedbackSubmitRequest, RuleConfidenceResponse } from '@/types'
 
 const http = axios.create({
   baseURL: '/api/v1',
@@ -93,5 +93,16 @@ export async function getAvailableProviders(): Promise<string[]> {
 
 export async function getCachedResult(owner: string, repo: string, prNumber: number): Promise<AnalysisResult | null> {
   const res = await http.get<ApiResponse<AnalysisResult>>(`/pr/cache/${owner}/${repo}/${prNumber}`)
+  return res.data.data
+}
+
+// Feedback API
+export async function submitFeedback(data: FeedbackSubmitRequest): Promise<void> {
+  await http.post('/feedback', data)
+}
+
+export async function getRuleStats(ruleName?: string): Promise<RuleConfidenceResponse | RuleConfidenceResponse[]> {
+  const url = ruleName ? `/feedback/stats/${ruleName}` : '/feedback/stats'
+  const res = await http.get<ApiResponse<RuleConfidenceResponse | RuleConfidenceResponse[]>>(url)
   return res.data.data
 }

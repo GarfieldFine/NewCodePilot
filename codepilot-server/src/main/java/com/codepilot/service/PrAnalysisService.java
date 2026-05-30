@@ -18,13 +18,16 @@ public class PrAnalysisService {
     private final GitHubClient gitHubClient;
     private final ReviewEngine reviewEngine;
     private final AnalysisCacheService cacheService;
+    private final RuleFeedbackService feedbackService;
 
     public PrAnalysisService(GitHubClient gitHubClient,
                              ReviewEngine reviewEngine,
-                             AnalysisCacheService cacheService) {
+                             AnalysisCacheService cacheService,
+                             RuleFeedbackService feedbackService) {
         this.gitHubClient = gitHubClient;
         this.reviewEngine = reviewEngine;
         this.cacheService = cacheService;
+        this.feedbackService = feedbackService;
     }
 
     public Mono<AnalysisResult> analyzePr(String prUrl, String providerName) {
@@ -57,9 +60,17 @@ public class PrAnalysisService {
     private Mono<AnalysisResult> doAnalyze(PrInfo prInfo, String providerName,
                                             GitHubClient.PrUrlInfo urlInfo) {
         return reviewEngine.analyze(prInfo, providerName)
-                .flatMap(result -> cacheService.cacheResult(
-                                urlInfo.owner(), urlInfo.repo(), urlInfo.prNumber(), result)
-                        .thenReturn(result));
+                .flatMap(result -> {
+                    // Persist to DB for feedback tracking
+                    try {
+                        feedbackService.saveAnalysisRecord(result);
+                    } catch (Exception e) {
+                        log.warn("Failed to save analysis record: {}", e.getMessage());
+                    }
+                    return cacheService.cacheResult(
+                                    urlInfo.owner(), urlInfo.repo(), urlInfo.prNumber(), result)
+                            .thenReturn(result);
+                });
     }
 
     public Mono<PrInfo> getPrDetail(String prUrl) {

@@ -88,6 +88,7 @@ function handleBack() {
         <RuleFindings
           v-if="store.result?.ruleResults"
           :findings="store.result.ruleResults"
+          :analysis-id="store.result?.analysisId"
         />
       </aside>
     </main>

@@ -19,16 +19,21 @@ spring:
           max-idle: 8
           min-idle: 0
 
-  # Datasource (H2 for dev)
+  # Datasource (MySQL)
   datasource:
-    url: jdbc:h2:mem:codepilot;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+    url: jdbc:mysql://127.0.0.1:3306/codepilot?useUnicode=true&characterEncoding=UTF-8&rewriteBatchedStatements=true&allowMultiQueries=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:}
+    password: ${MYSQL_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
 
 # MyBatis Plus
 mybatis-plus:

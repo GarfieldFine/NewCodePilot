@@ -21,4 +21,14 @@ public interface Rule {
     default int getPriority() {
         return 100;
     }
+
+    /**
+     * Base confidence level for this rule (0.0-1.0).
+     * High FP-risk rules should return lower values.
+     * This is the static default; dynamic thresholds from
+     * rule_confidence table override it when feedback data exists.
+     */
+    default double getBaseConfidence() {
+        return 0.7;
+    }
 }

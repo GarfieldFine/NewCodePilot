@@ -42,6 +42,8 @@ export interface RuleResult {
   suggestion: string
   codeSnippet: string
   matched: boolean
+  confidence?: number
+  confidencePassed?: boolean
 }
 
 export interface RiskScore {
@@ -115,4 +117,28 @@ export interface PrDetail {
   additions: number
   deletions: number
   changedFiles: number
+}
+
+// Feedback types
+export interface FeedbackSubmitRequest {
+  analysisId: string
+  findingId: string
+  ruleName: string
+  category?: string
+  fileName?: string
+  lineNumber?: number
+  feedbackType: 'CONFIRMED' | 'FALSE_POSITIVE' | 'MISSED_ISSUE'
+  comment?: string
+}
+
+export interface RuleConfidenceResponse {
+  ruleName: string
+  totalHits: number
+  confirmed: number
+  falsePositives: number
+  missedIssues: number
+  precisionRate: number
+  recallEstimate: number
+  minConfidenceThreshold: number
+  enabled: boolean
 }

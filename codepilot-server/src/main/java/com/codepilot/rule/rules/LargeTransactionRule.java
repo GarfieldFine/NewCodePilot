@@ -37,6 +37,11 @@ public class LargeTransactionRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.60; // transaction boundary analysis needs context
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 

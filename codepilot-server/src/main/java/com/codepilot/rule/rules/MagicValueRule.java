@@ -39,6 +39,11 @@ public class MagicValueRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.45; // very subjective, many magic numbers are acceptable
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 
