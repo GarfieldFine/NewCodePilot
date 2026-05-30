@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * Executes individual agents and manages the SSE event emission for agent lifecycle.
+ * Executes individual agents and emits AgentEvent lifecycle events.
  */
 @Slf4j
 @Component
@@ -20,37 +20,73 @@ public class AgentExecutor {
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     /**
-     * Run a single agent, emitting lifecycle events via callback.
+     * Run a single agent (sync execute), emitting lifecycle events via callback.
      */
-    public AgentResult runAgent(Agent agent, AgentContext context, Consumer<SseAgentEvent> eventSink) {
+    public AgentResult runAgent(Agent agent, AgentContext context, Consumer<AgentEvent> eventSink) {
         if (!agent.shouldRun(context)) {
             AgentResult skipped = AgentResult.skipped(agent.getName(), "Precondition not met");
-            eventSink.accept(SseAgentEvent.skipped(agent.getName(), skipped.getSummary()));
+            eventSink.accept(AgentEvent.skipped(context.getAnalysisId(), agent.getName(), skipped.getSummary()));
             return skipped;
         }
 
         long start = System.currentTimeMillis();
-        eventSink.accept(SseAgentEvent.started(agent.getName(), agent.getDescription()));
+        String traceId = context.getAnalysisId();
+
+        eventSink.accept(AgentEvent.started(traceId, agent.getName(), agent.getDescription()));
+        eventSink.accept(AgentEvent.running(traceId, agent.getName(), "Executing " + agent.getName()));
 
         try {
             AgentResult result = agent.execute(context);
             result.setDurationMs(System.currentTimeMillis() - start);
-            eventSink.accept(SseAgentEvent.completed(agent.getName(), result.getSummary()));
+            eventSink.accept(AgentEvent.completed(traceId, agent.getName(), result.getSummary(), result.getOutput()));
             log.info("Agent [{}] completed in {}ms: {}", agent.getName(), result.getDurationMs(), result.getSummary());
             return result;
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - start;
             log.error("Agent [{}] failed after {}ms: {}", agent.getName(), duration, e.getMessage());
-            eventSink.accept(SseAgentEvent.failed(agent.getName(), e.getMessage()));
+            eventSink.accept(AgentEvent.failed(traceId, agent.getName(), e.getMessage()));
             return AgentResult.failed(agent.getName(), e.getMessage());
         }
     }
 
     /**
-     * Run multiple agents sequentially, one after another.
+     * Run a single agent using streaming execution (executeStreaming).
+     * The agent itself emits intermediate events (chunk progress, AI tokens).
+     * Only calls executeStreaming — the agent is responsible for its own logic.
+     */
+    public AgentResult runAgentStreaming(Agent agent, AgentContext context, Consumer<AgentEvent> eventSink) {
+        if (!agent.shouldRun(context)) {
+            AgentResult skipped = AgentResult.skipped(agent.getName(), "Precondition not met");
+            eventSink.accept(AgentEvent.skipped(context.getAnalysisId(), agent.getName(), skipped.getSummary()));
+            return skipped;
+        }
+
+        long start = System.currentTimeMillis();
+        String traceId = context.getAnalysisId();
+
+        eventSink.accept(AgentEvent.started(traceId, agent.getName(), agent.getDescription()));
+        eventSink.accept(AgentEvent.running(traceId, agent.getName(), "Executing " + agent.getName()));
+
+        try {
+            agent.executeStreaming(context, eventSink);
+            long duration = System.currentTimeMillis() - start;
+            log.info("Agent [{}] completed (streaming) in {}ms", agent.getName(), duration);
+            String summary = agent.getName() + " completed in " + duration + "ms";
+            eventSink.accept(AgentEvent.completed(traceId, agent.getName(), summary, Map.of("durationMs", duration)));
+            return AgentResult.success(agent.getName(), summary, Map.of("durationMs", duration));
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - start;
+            log.error("Agent [{}] failed after {}ms: {}", agent.getName(), duration, e.getMessage());
+            eventSink.accept(AgentEvent.failed(traceId, agent.getName(), e.getMessage()));
+            return AgentResult.failed(agent.getName(), e.getMessage());
+        }
+    }
+
+    /**
+     * Run multiple agents sequentially.
      */
     public List<AgentResult> runSequential(List<Agent> agents, AgentContext context,
-                                           Consumer<SseAgentEvent> eventSink) {
+                                           Consumer<AgentEvent> eventSink) {
         List<AgentResult> results = new ArrayList<>();
         for (Agent agent : agents) {
             results.add(runAgent(agent, context, eventSink));
@@ -59,10 +95,22 @@ public class AgentExecutor {
     }
 
     /**
+     * Run multiple agents sequentially (streaming variant).
+     */
+    public List<AgentResult> runSequentialStreaming(List<Agent> agents, AgentContext context,
+                                                    Consumer<AgentEvent> eventSink) {
+        List<AgentResult> results = new ArrayList<>();
+        for (Agent agent : agents) {
+            results.add(runAgentStreaming(agent, context, eventSink));
+        }
+        return results;
+    }
+
+    /**
      * Run multiple agents in parallel.
      */
     public List<AgentResult> runParallel(List<Agent> agents, AgentContext context,
-                                         Consumer<SseAgentEvent> eventSink) {
+                                         Consumer<AgentEvent> eventSink) {
         List<CompletableFuture<AgentResult>> futures = agents.stream()
                 .map(agent -> CompletableFuture.supplyAsync(
                         () -> runAgent(agent, context, eventSink), executor))
@@ -77,35 +125,20 @@ public class AgentExecutor {
     }
 
     /**
-     * SSE event for agent lifecycle. Separate from main SSE stream to keep event types clear.
+     * Run multiple agents in parallel (streaming variant).
      */
-    public record SseAgentEvent(String type, String agentName, String message) {
+    public List<AgentResult> runParallelStreaming(List<Agent> agents, AgentContext context,
+                                                  Consumer<AgentEvent> eventSink) {
+        List<CompletableFuture<AgentResult>> futures = agents.stream()
+                .map(agent -> CompletableFuture.supplyAsync(
+                        () -> runAgentStreaming(agent, context, eventSink), executor))
+                .toList();
 
-        public static SseAgentEvent started(String agentName, String description) {
-            return new SseAgentEvent("agent_start", agentName, description);
-        }
-
-        public static SseAgentEvent completed(String agentName, String summary) {
-            return new SseAgentEvent("agent_complete", agentName, summary);
-        }
-
-        public static SseAgentEvent failed(String agentName, String error) {
-            return new SseAgentEvent("agent_error", agentName, error);
-        }
-
-        public static SseAgentEvent skipped(String agentName, String reason) {
-            return new SseAgentEvent("agent_skip", agentName, reason);
-        }
-
-        public static SseAgentEvent pipelineStage(String stage) {
-            return new SseAgentEvent("pipeline_stage", stage, "");
-        }
-
-        public String toJson() {
-            return String.format("{\"type\":\"%s\",\"agentName\":\"%s\",\"message\":\"%s\"}",
-                    type.replace("\"", "\\\""),
-                    agentName != null ? agentName.replace("\"", "\\\"") : "",
-                    message != null ? message.replace("\"", "\\\"") : "");
-        }
+        return futures.stream()
+                .map(f -> {
+                    try { return f.get(120, TimeUnit.SECONDS); }
+                    catch (Exception e) { return AgentResult.failed("parallel-agent", e.getMessage()); }
+                })
+                .toList();
     }
 }

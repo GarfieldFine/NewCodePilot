@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { AgentEvent } from '@/types'
-import type { AnalysisStatus } from '@/types'
+import { ref, computed } from 'vue'
+import type { AgentEvent, AnalysisStatus } from '@/types'
 
 const props = defineProps<{
   agentEvents: Array<AgentEvent & { time: number }>
@@ -11,7 +11,7 @@ const props = defineProps<{
 
 const agentLabels: Record<string, string> = {
   'RepositoryAnalyzeAgent': '仓库结构分析',
-  'DiffAnalyzeAgent': 'Diff 变更分析',
+  'DiffAnalyzeAgent': '差异变更分析',
   'ContextBuildAgent': '代码上下文构建',
   'RiskDetectAgent': '风险模式检测',
   'ReviewGenerateAgent': 'AI 智能评审',
@@ -25,6 +25,8 @@ const stageLabels: Record<string, string> = {
   'Merging Analysis': '汇总分析结果'
 }
 
+const expandedAgent = ref<string | null>(null)
+
 function getAgentLabel(name: string): string {
   return agentLabels[name] || name
 }
@@ -37,12 +39,21 @@ function isAgentActive(name: string): boolean {
   return props.activeAgents.includes(name)
 }
 
-function isAgentDone(name: string): boolean {
-  return props.agentEvents.some(e => e.type === 'agent_complete' && e.agentName === name)
+function getAgentState(name: string): 'running' | 'done' | 'failed' | 'waiting' {
+  if (isAgentActive(name)) return 'running'
+  if (props.agentEvents.some(e => e.type === 'AGENT_COMPLETED' && e.agentName === name)) return 'done'
+  if (props.agentEvents.some(e => e.type === 'AGENT_FAILED' && e.agentName === name)) return 'failed'
+  return 'waiting'
 }
 
-function isAgentFailed(name: string): boolean {
-  return props.agentEvents.some(e => e.type === 'agent_error' && e.agentName === name)
+function getAgentLogs(name: string): string[] {
+  return props.agentEvents
+    .filter(e => e.agentName === name && e.message)
+    .map(e => e.message)
+}
+
+function toggleExpand(name: string) {
+  expandedAgent.value = expandedAgent.value === name ? null : name
 }
 
 // Get unique agents from events while preserving order
@@ -57,6 +68,18 @@ function getUniqueAgents(): string[] {
   }
   return agents
 }
+
+const justCompleted = ref<Set<string>>(new Set())
+
+// Watch for newly completed agents to trigger glow animation
+function markCompleted(name: string) {
+  justCompleted.value.add(name)
+  setTimeout(() => justCompleted.value.delete(name), 800)
+}
+
+const isLive = computed(() =>
+  props.status && props.status !== 'COMPLETED' && props.status !== 'FAILED'
+)
 </script>
 
 <template>
@@ -66,10 +89,10 @@ function getUniqueAgents(): string[] {
         <circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/>
       </svg>
       <span>AI Agent 工作流</span>
-      <span class="live-badge" v-if="status && status !== 'COMPLETED' && status !== 'FAILED'">LIVE</span>
+      <span class="live-badge" v-if="isLive">运行中</span>
     </div>
 
-    <!-- Stage indicators -->
+    <!-- Stage indicator -->
     <div v-if="currentStage" class="current-stage">
       <span class="stage-dot"></span>
       {{ getStageLabel(currentStage) || currentStage }}
@@ -77,34 +100,43 @@ function getUniqueAgents(): string[] {
 
     <!-- Agent list -->
     <div class="agent-list" v-if="agentEvents.length > 0">
-      <div
-        v-for="name in getUniqueAgents()"
-        :key="name"
-        class="agent-item"
-        :class="{
-          active: isAgentActive(name),
-          done: isAgentDone(name),
-          failed: isAgentFailed(name)
-        }"
-      >
-        <div class="agent-indicator">
-          <svg v-if="isAgentDone(name)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          <svg v-else-if="isAgentFailed(name)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-          <span v-else-if="isAgentActive(name)" class="active-ring"></span>
-          <span v-else class="pending-dot"></span>
+      <TransitionGroup name="agent-advance">
+        <div
+          v-for="name in getUniqueAgents()"
+          :key="name"
+          class="agent-item"
+          :class="{
+            active: isAgentActive(name),
+            done: getAgentState(name) === 'done',
+            failed: getAgentState(name) === 'failed',
+            'just-done': justCompleted.has(name)
+          }"
+          @click="toggleExpand(name)"
+        >
+          <div class="agent-indicator">
+            <!-- Checkmark with draw animation -->
+            <svg v-if="getAgentState(name) === 'done'" class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline class="check-draw" points="20 6 9 17 4 12"/>
+            </svg>
+            <svg v-else-if="getAgentState(name) === 'failed'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            <span v-else-if="isAgentActive(name)" class="active-ring"></span>
+            <span v-else class="pending-dot"></span>
+          </div>
+          <div class="agent-info">
+            <span class="agent-name">{{ getAgentLabel(name) }}</span>
+            <span v-if="getAgentState(name) === 'running'" class="agent-log-preview">
+              {{ agentEvents.filter(e => e.agentName === name && e.type === 'AGENT_RUNNING').pop()?.message || '' }}
+            </span>
+          </div>
+          <span v-if="getAgentState(name) === 'running'" class="agent-status-label running">运行中</span>
+          <span v-else-if="getAgentState(name) === 'done'" class="agent-status-label done">完成</span>
+          <span v-else-if="getAgentState(name) === 'failed'" class="agent-status-label failed">失败</span>
+          <span v-else class="agent-status-label waiting">等待中</span>
+          <svg class="chevron" :class="{ open: expandedAgent === name }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <div class="agent-info">
-          <span class="agent-name">{{ getAgentLabel(name) }}</span>
-        </div>
-        <span v-if="isAgentActive(name)" class="agent-status-label running">运行中</span>
-        <span v-else-if="isAgentDone(name)" class="agent-status-label done">完成</span>
-        <span v-else-if="isAgentFailed(name)" class="agent-status-label failed">失败</span>
-        <span v-else class="agent-status-label waiting">等待</span>
-      </div>
+      </TransitionGroup>
     </div>
 
     <!-- Empty state -->
@@ -135,9 +167,7 @@ function getUniqueAgents(): string[] {
   margin-bottom: 12px;
 }
 
-.timeline-header svg {
-  color: var(--primary);
-}
+.timeline-header svg { color: var(--primary); }
 
 .live-badge {
   margin-left: auto;
@@ -187,14 +217,32 @@ function getUniqueAgents(): string[] {
   gap: 3px;
 }
 
+/* Auto-advance transitions */
+.agent-advance-enter-active {
+  transition: all 0.35s ease-out;
+}
+.agent-advance-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+.agent-advance-leave-active {
+  transition: all 0.2s ease-in;
+  position: absolute;
+}
+.agent-advance-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
 .agent-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
+  transition: all 0.3s ease;
   font-size: 13px;
+  cursor: pointer;
 }
 
 .agent-item.active {
@@ -202,7 +250,17 @@ function getUniqueAgents(): string[] {
 }
 
 .agent-item.done {
-  opacity: 0.6;
+  opacity: 0.65;
+}
+
+.agent-item.just-done {
+  animation: glow-flash 0.8s ease-out;
+}
+
+@keyframes glow-flash {
+  0% { box-shadow: 0 0 0 rgba(52, 211, 153, 0); background: rgba(52, 211, 153, 0.06); }
+  40% { box-shadow: 0 0 14px rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.12); }
+  100% { box-shadow: 0 0 0 rgba(52, 211, 153, 0); background: transparent; }
 }
 
 .agent-item.failed {
@@ -216,6 +274,17 @@ function getUniqueAgents(): string[] {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+/* Checkmark draw animation */
+.check-icon .check-draw {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: draw-check 0.45s ease forwards;
+}
+
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
 }
 
 .active-ring {
@@ -260,6 +329,9 @@ function getUniqueAgents(): string[] {
 .agent-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .agent-name {
@@ -270,6 +342,14 @@ function getUniqueAgents(): string[] {
 
 .agent-item.done .agent-name {
   color: var(--text-secondary);
+}
+
+.agent-log-preview {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-status-label {
@@ -298,6 +378,16 @@ function getUniqueAgents(): string[] {
 .agent-status-label.waiting {
   color: var(--text-muted);
   background: rgba(107, 107, 128, 0.1);
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
 }
 
 .empty-state {

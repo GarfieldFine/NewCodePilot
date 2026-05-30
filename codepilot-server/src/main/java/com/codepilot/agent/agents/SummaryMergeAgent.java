@@ -3,6 +3,7 @@ package com.codepilot.agent.agents;
 import com.codepilot.agent.Agent;
 import com.codepilot.agent.AgentContext;
 import com.codepilot.agent.AgentResult;
+import com.codepilot.ai.model.RiskFinding;
 import com.codepilot.github.model.PrFile;
 import com.codepilot.github.model.PrInfo;
 import com.codepilot.model.enums.AnalysisStatus;
@@ -20,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -72,9 +75,9 @@ public class SummaryMergeAgent implements Agent {
         // 3.5 Build token usage from chunk metadata
         TokenUsage tokenUsage = buildTokenUsage(context);
 
-        // 4. Build per-file analysis
+        // 4. Build per-file analysis with AI explainability
         List<FileAnalysis> fileAnalysis = buildFileAnalysis(
-                context.getPrInfo(), context.getRuleResults());
+                context.getPrInfo(), context.getRuleResults(), context.getChunkReviews());
 
         // 5. Build final AnalysisResult
         Map<String, Object> repoProfile = Map.of(
@@ -256,11 +259,18 @@ public class SummaryMergeAgent implements Agent {
         return conf;
     }
 
-    private List<FileAnalysis> buildFileAnalysis(PrInfo prInfo, List<RuleResult> allRules) {
+    private List<FileAnalysis> buildFileAnalysis(PrInfo prInfo, List<RuleResult> allRules, List<String> chunkReviews) {
+        // Parse AI findings from chunk reviews
+        List<RiskFinding> allAiFindings = parseAiFindings(chunkReviews);
+
         List<FileAnalysis> analysis = new ArrayList<>();
         for (PrFile file : prInfo.getFiles()) {
             List<RuleResult> fileRules = allRules.stream()
                     .filter(r -> file.getFilename().equals(r.getFile()))
+                    .collect(Collectors.toList());
+
+            List<RiskFinding> fileAiFindings = allAiFindings.stream()
+                    .filter(f -> f.getFile() != null && f.getFile().equals(file.getFilename()))
                     .collect(Collectors.toList());
 
             RiskLevel highestRisk = fileRules.stream()
@@ -268,6 +278,18 @@ public class SummaryMergeAgent implements Agent {
                     .map(RuleResult::getRiskLevel)
                     .max(Comparator.comparingInt(RiskLevel::getLevel))
                     .orElse(RiskLevel.LOW);
+
+            // AI findings may raise the risk level
+            if (!fileAiFindings.isEmpty()) {
+                RiskLevel aiHighest = fileAiFindings.stream()
+                        .map(RiskFinding::getLevel)
+                        .filter(Objects::nonNull)
+                        .max(Comparator.comparingInt(RiskLevel::getLevel))
+                        .orElse(RiskLevel.LOW);
+                if (aiHighest.getLevel() > highestRisk.getLevel()) {
+                    highestRisk = aiHighest;
+                }
+            }
 
             analysis.add(FileAnalysis.builder()
                     .filename(file.getFilename())
@@ -277,8 +299,81 @@ public class SummaryMergeAgent implements Agent {
                     .deletions(file.getDeletions())
                     .riskLevel(highestRisk)
                     .findings(fileRules)
+                    .aiFindings(fileAiFindings)
                     .build());
         }
         return analysis;
+    }
+
+    /**
+     * Parse AI-generated structured findings from chunk review text.
+     * Extracts RiskFinding objects with why/evidence/impact fields.
+     */
+    private List<RiskFinding> parseAiFindings(List<String> chunkReviews) {
+        List<RiskFinding> findings = new ArrayList<>();
+        if (chunkReviews == null || chunkReviews.isEmpty()) return findings;
+
+        String combined = String.join("\n", chunkReviews);
+        String[] sections = combined.split("(?i)(?:###|\\*\\*)(?:Risk|Finding|Issue)[:#\\s]");
+
+        for (int i = 1; i < sections.length; i++) {
+            String section = sections[i];
+            RiskFinding finding = parseSingleAiFinding(section);
+            if (finding != null && finding.getDescription() != null && !finding.getDescription().isEmpty()) {
+                findings.add(finding);
+            }
+        }
+
+        return findings;
+    }
+
+    private RiskFinding parseSingleAiFinding(String section) {
+        String description = extractField(section, "(?i)(?:Description|Risk|Issue)[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Suggestion|Fix|File|Level|$))");
+        String why = extractField(section, "(?i)Why[:\\s]*\\n?(.+?)(?=\\n(?:Evidence|Impact|Suggestion|Fix|Description|File|Level|$))");
+        String evidence = extractField(section, "(?i)Evidence[:\\s]*\\n?(.+?)(?=\\n(?:Why|Impact|Suggestion|Fix|Description|File|Level|$))");
+        String impact = extractField(section, "(?i)Impact[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Suggestion|Fix|Description|File|Level|$))");
+        String suggestion = extractField(section, "(?i)(?:Suggestion|Fix|Recommendation)[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Description|File|Level|$))");
+        String file = extractField(section, "(?i)File[:\\s]*([^\\n]+)");
+        String level = extractField(section, "(?i)Level[:\\s]*(HIGH|MEDIUM|LOW|CRITICAL)");
+        String lineStr = extractField(section, "(?i)Line[:\\s]*(\\d+)");
+
+        Integer line = null;
+        if (lineStr != null) {
+            try { line = Integer.parseInt(lineStr.trim()); } catch (NumberFormatException ignored) {}
+        }
+
+        return RiskFinding.builder()
+                .file(file != null ? file.trim() : null)
+                .line(line)
+                .level(parseRiskLevel(level))
+                .category("AI_REVIEW")
+                .description(cleanField(description))
+                .suggestion(cleanField(suggestion))
+                .why(cleanField(why))
+                .evidence(cleanField(evidence))
+                .impact(cleanField(impact))
+                .confidenceScore(0.7)
+                .build();
+    }
+
+    private String extractField(String text, String pattern) {
+        Matcher m = Pattern.compile(pattern, Pattern.DOTALL | Pattern.CASE_INSENSITIVE).matcher(text);
+        if (m.find()) {
+            String value = m.group(1).trim();
+            // Limit to 500 chars per field
+            return value.length() > 500 ? value.substring(0, 500) : value;
+        }
+        return null;
+    }
+
+    private String cleanField(String value) {
+        if (value == null) return null;
+        return value.replaceAll("^[\\s\\-*:]+", "").replaceAll("[\\s\\-*:]+$", "").trim();
+    }
+
+    private RiskLevel parseRiskLevel(String level) {
+        if (level == null) return RiskLevel.MEDIUM;
+        try { return RiskLevel.valueOf(level.trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { return RiskLevel.MEDIUM; }
     }
 }

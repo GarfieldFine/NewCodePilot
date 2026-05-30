@@ -2,6 +2,7 @@ package com.codepilot.agent.agents;
 
 import com.codepilot.agent.Agent;
 import com.codepilot.agent.AgentContext;
+import com.codepilot.agent.AgentEvent;
 import com.codepilot.agent.AgentResult;
 import com.codepilot.ai.AiProvider;
 import com.codepilot.ai.AiProviderFactory;
@@ -16,14 +17,18 @@ import com.codepilot.rule.RuleResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
  * Generates structured AI review using persona-enriched prompts and concurrent chunk analysis.
- *
- * PersonaPromptBuilder selects appropriate reviewer personas based on detected languages,
- * frameworks, and risk dimensions. ChunkAnalyzer runs AI calls concurrently.
+ * Supports both batch (execute) and streaming (executeStreaming) modes.
  */
 @Slf4j
 @Component
@@ -35,6 +40,8 @@ public class ReviewGenerateAgent implements Agent {
     private final ContextCompressor compressor;
     private final DiffContextBuilder contextBuilder;
     private final PersonaPromptBuilder personaPromptBuilder;
+
+    private static final long CHUNK_TIMEOUT_SECONDS = 180;
 
     public ReviewGenerateAgent(AiProviderFactory aiProviderFactory,
                                ChunkSplitter chunkSplitter,
@@ -64,63 +71,95 @@ public class ReviewGenerateAgent implements Agent {
         AiProvider aiProvider = aiProviderFactory.getProvider(context.getProviderName());
         List<PRAnalysisChunk> chunks = chunkSplitter.split(context.getPrInfo());
 
-        log.info("{}: Reviewing {} chunks with provider {} (persona-enriched)",
-                getName(), chunks.size(), aiProvider.getProviderName());
+        log.info("{}: Reviewing {} chunks with provider {}", getName(), chunks.size(), aiProvider.getProviderName());
 
         String primaryLanguage = context.getLanguages().isEmpty() ? "Java" : context.getLanguages().get(0);
-
-        // Extract risk dimensions from diff analysis
         List<String> riskDimensions = extractRiskDimensions(context);
-
-        // Build persona-enriched system prompt once (shared across chunks)
         String systemPrompt = personaPromptBuilder.buildSystemPrompt(
-                primaryLanguage,
-                context.getLanguages(),
-                context.getFrameworks(),
-                context.getProjectType(),
-                riskDimensions);
-
-        // Store active persona names in context for downstream agents
+                primaryLanguage, context.getLanguages(), context.getFrameworks(),
+                context.getProjectType(), riskDimensions);
         context.put("personaSystemPrompt", systemPrompt);
 
-        // Analyze all chunks concurrently
         List<ChunkResult> chunkResults = chunkAnalyzer.analyze(chunks, chunk -> {
-            String chunkLang = detectChunkLanguage(chunk);
-
-            Map<String, String> fileContexts = contextBuilder.buildContext(
-                    chunk.files(), Collections.emptyMap());
-            Map<String, String> compressed = compressor.compressContexts(fileContexts, 3000);
-
-            List<RuleResult> chunkRules = context.getRuleResults().stream()
-                    .filter(r -> chunk.files().stream()
-                            .anyMatch(f -> f.getFilename().equals(r.getFile())))
-                    .collect(Collectors.toList());
-
-            // Build user prompt using externalized template
-            Map<String, String> vars = new LinkedHashMap<>();
-            vars.put("fileSummary", compressor.summarizeChunk(chunk.files(), 15));
-            vars.put("projectContext", context.getProjectType()
-                    + " | Language: " + chunkLang
-                    + " | Frameworks: " + String.join(", ", context.getFrameworks()));
-            vars.put("diff", compressor.compressDiff(chunk.diff(), 5000));
-            vars.put("relatedCode", compressed.isEmpty() ? "No additional context" :
-                    truncate(String.join("\n\n", compressed.values()), 4000));
-            vars.put("ruleFindings", formatRuleFindings(chunkRules));
-            vars.put("commits", formatCommits(context));
-
+            Map<String, String> vars = buildPromptVars(chunk, context);
             String userPrompt = personaPromptBuilder.buildUserPrompt(vars);
-
             return aiProvider.chat(systemPrompt, userPrompt);
         });
 
-        // Collect reviews
+        return collectResults(context, chunks, chunkResults);
+    }
+
+    @Override
+    public void executeStreaming(AgentContext context, Consumer<AgentEvent> eventSink) {
+        AiProvider aiProvider = aiProviderFactory.getProvider(context.getProviderName());
+        List<PRAnalysisChunk> chunks = chunkSplitter.split(context.getPrInfo());
+
+        log.info("{} (streaming): Reviewing {} chunks with provider {}",
+                getName(), chunks.size(), aiProvider.getProviderName());
+
+        String primaryLanguage = context.getLanguages().isEmpty() ? "Java" : context.getLanguages().get(0);
+        List<String> riskDimensions = extractRiskDimensions(context);
+        String systemPrompt = personaPromptBuilder.buildSystemPrompt(
+                primaryLanguage, context.getLanguages(), context.getFrameworks(),
+                context.getProjectType(), riskDimensions);
+        context.put("personaSystemPrompt", systemPrompt);
+
+        String traceId = context.getAnalysisId();
+
+        List<ChunkResult> chunkResults = chunkAnalyzer.analyze(chunks, chunk -> {
+            int chunkIdx = chunks.indexOf(chunk);
+            Map<String, String> vars = buildPromptVars(chunk, context);
+            String userPrompt = personaPromptBuilder.buildUserPrompt(vars);
+
+            // Decouple AI token emission from the WebClient I/O thread.
+            // chatStream() tokens arrive on WebClient's event-loop thread; if we call
+            // eventSink.accept() from that thread we bypass Sink backpressure and fill
+            // the buffer. Instead, tokens go into a BlockingQueue (WebClient thread writes)
+            // and are drained on the current chunk-analyzer worker thread (which calls
+            // eventSink.accept). The bounded buffer in AgentPipeline will then naturally
+            // pace the worker thread when the browser can't keep up.
+            BlockingQueue<String> tokenQueue = new LinkedBlockingQueue<>();
+            StringBuilder fullOutput = new StringBuilder();
+
+            try {
+                CompletableFuture<List<String>> streamFuture = aiProvider
+                        .chatStream(systemPrompt, userPrompt)
+                        .doOnNext(token -> {
+                            log.info("TOKEN => [{}]", token);
+                            tokenQueue.add(token);
+                        })
+                        .collectList()
+                        .toFuture();
+
+                // Drain tokens on current (chunk-analyzer worker) thread
+                while (!streamFuture.isDone() || !tokenQueue.isEmpty()) {
+                    String token = tokenQueue.poll(20, TimeUnit.MILLISECONDS);
+                    if (token != null) {
+                        fullOutput.append(token);
+                        eventSink.accept(AgentEvent.aiToken(traceId, getDescription(), token,
+                                Map.of("chunkIndex", chunkIdx, "totalChunks", chunks.size())));
+                    }
+                }
+
+                List<String> tokens = streamFuture.get(CHUNK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                return tokens.stream().collect(Collectors.joining());
+            } catch (Exception e) {
+                log.error("Chunk {} streaming failed: {}", chunkIdx, e.getMessage());
+                throw new RuntimeException("AI streaming failed for chunk " + chunkIdx + ": " + e.getMessage());
+            }
+        }, eventSink, traceId);
+
+        collectResults(context, chunks, chunkResults);
+    }
+
+    private AgentResult collectResults(AgentContext context, List<PRAnalysisChunk> chunks,
+                                        List<ChunkResult> chunkResults) {
         List<String> chunkReviews = new ArrayList<>();
         for (ChunkResult r : chunkResults) {
             chunkReviews.add(r.output());
         }
         context.setChunkReviews(chunkReviews);
 
-        // Chunk metadata
         Map<String, Object> chunkMeta = new LinkedHashMap<>();
         chunkMeta.put("totalChunks", chunks.size());
         chunkMeta.put("successfulChunks", chunkResults.stream().filter(ChunkResult::isSuccess).count());
@@ -135,12 +174,35 @@ public class ReviewGenerateAgent implements Agent {
         output.put("chunkMeta", chunkMeta);
 
         String summary = String.format("Generated AI review across %d chunks (%d/%d succeeded, %d total chars)",
-                chunks.size(),
-                chunkMeta.get("successfulChunks"),
-                chunkMeta.get("totalChunks"),
+                chunks.size(), chunkMeta.get("successfulChunks"), chunkMeta.get("totalChunks"),
                 output.get("totalReviewLength"));
 
+        log.info("{}: {}", getName(), summary);
+
+        // Return result but don't emit events — AgentExecutor handles AGENT_COMPLETED
+        context.put("reviewGenerateSummary", summary);
         return AgentResult.success(getName(), summary, output);
+    }
+
+    private Map<String, String> buildPromptVars(PRAnalysisChunk chunk, AgentContext context) {
+        String chunkLang = chunk.files().isEmpty() ? "Java" : chunk.files().get(0).getLanguage();
+        Map<String, String> fileContexts = contextBuilder.buildContext(chunk.files(), Collections.emptyMap());
+        Map<String, String> compressed = compressor.compressContexts(fileContexts, 3000);
+        List<RuleResult> chunkRules = context.getRuleResults().stream()
+                .filter(r -> chunk.files().stream().anyMatch(f -> f.getFilename().equals(r.getFile())))
+                .collect(Collectors.toList());
+
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("fileSummary", compressor.summarizeChunk(chunk.files(), 15));
+        vars.put("projectContext", context.getProjectType()
+                + " | Language: " + chunkLang
+                + " | Frameworks: " + String.join(", ", context.getFrameworks()));
+        vars.put("diff", compressor.compressDiff(chunk.diff(), 5000));
+        vars.put("relatedCode", compressed.isEmpty() ? "No additional context" :
+                truncate(String.join("\n\n", compressed.values()), 4000));
+        vars.put("ruleFindings", formatRuleFindings(chunkRules));
+        vars.put("commits", formatCommits(context));
+        return vars;
     }
 
     private List<String> extractRiskDimensions(AgentContext context) {
@@ -165,11 +227,6 @@ public class ReviewGenerateAgent implements Agent {
             dimensions.add("Large or high-risk file changes");
         }
         return dimensions;
-    }
-
-    private String detectChunkLanguage(PRAnalysisChunk chunk) {
-        if (chunk.files().isEmpty()) return "Java";
-        return chunk.files().get(0).getLanguage();
     }
 
     private String formatRuleFindings(List<RuleResult> chunkRules) {

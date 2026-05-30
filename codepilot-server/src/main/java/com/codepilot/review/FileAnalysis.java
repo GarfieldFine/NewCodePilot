@@ -1,5 +1,6 @@
 package com.codepilot.review;
 
+import com.codepilot.ai.model.RiskFinding;
 import com.codepilot.model.enums.RiskLevel;
 import com.codepilot.rule.RuleResult;
 import lombok.AllArgsConstructor;
@@ -7,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -21,4 +23,6 @@ public class FileAnalysis {
     private Integer deletions;
     private RiskLevel riskLevel;
     private List<RuleResult> findings;
+    @Builder.Default
+    private List<RiskFinding> aiFindings = new ArrayList<>();
 }

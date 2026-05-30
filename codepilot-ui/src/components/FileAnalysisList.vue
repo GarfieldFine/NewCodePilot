@@ -4,10 +4,22 @@ import type { FileAnalysis } from '@/types'
 
 defineProps<{ files: FileAnalysis[] }>()
 
+const emit = defineEmits<{
+  focus: [file: FileAnalysis]
+}>()
+
 const expandedFile = ref<string | null>(null)
 
 function toggle(filename: string) {
   expandedFile.value = expandedFile.value === filename ? null : filename
+}
+
+function handleRiskClick(file: FileAnalysis) {
+  if (file.riskLevel === 'HIGH' || file.riskLevel === 'CRITICAL') {
+    emit('focus', file)
+  } else {
+    toggle(file.filename)
+  }
 }
 
 const riskColors: Record<string, string> = {
@@ -46,7 +58,7 @@ const statusColors: Record<string, string> = {
       class="file-item"
       :class="{ expanded: expandedFile === file.filename }"
     >
-      <div class="file-row" @click="toggle(file.filename)">
+      <div class="file-row" @click="handleRiskClick(file)">
         <span
           class="file-status"
           :style="{ color: statusColors[file.status] || 'var(--text-muted)' }"

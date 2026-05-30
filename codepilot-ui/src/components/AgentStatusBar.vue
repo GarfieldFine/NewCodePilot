@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TokenUsage } from '@/types'
+import type { TokenUsage, ChunkProgress } from '@/types'
 
 const props = defineProps<{
   activeAgents: string[]
   tokenUsage: TokenUsage | null
   status: string
+  chunkProgress?: ChunkProgress | null
 }>()
 
 const agentCount = computed(() => props.activeAgents.length)
@@ -41,6 +42,21 @@ const isRunning = computed(() =>
           <span class="badge-dot"></span>
           {{ name.replace('Agent', '') }}
         </span>
+      </div>
+    </div>
+
+    <!-- Chunk progress -->
+    <div class="chunk-section" v-if="chunkProgress && chunkProgress.total > 0">
+      <div class="chunk-info">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span class="chunk-label">Analyzing</span>
+        <span class="chunk-counter">{{ chunkProgress.current }}/{{ chunkProgress.total }}</span>
+        <span class="chunk-filename" v-if="chunkProgress.fileName">{{ chunkProgress.fileName }}</span>
+      </div>
+      <div class="chunk-bar">
+        <div class="chunk-fill" :style="{ width: (chunkProgress.current / chunkProgress.total * 100) + '%' }"></div>
       </div>
     </div>
 
@@ -139,6 +155,61 @@ const isRunning = computed(() =>
 
 .stat svg {
   opacity: 0.5;
+}
+
+.chunk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.chunk-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chunk-info svg {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.chunk-label {
+  white-space: nowrap;
+}
+
+.chunk-counter {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.chunk-filename {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.chunk-bar {
+  width: 100%;
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.chunk-fill {
+  height: 100%;
+  background: var(--gradient-hero);
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
 .running-indicator {
