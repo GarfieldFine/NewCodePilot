@@ -45,6 +45,10 @@ function startAnalysis() {
   <div class="home">
     <header class="hero">
       <div class="hero-badge">AI-Powered Code Review</div>
+      <router-link to="/history" class="history-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        查看质量趋势
+      </router-link>
       <h1 class="hero-title">
         <span class="gradient-text">CodePilot</span>
       </h1>
@@ -169,6 +173,25 @@ const features = [
   color: var(--primary);
   letter-spacing: 0.5px;
   margin-bottom: 24px;
+}
+
+.history-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 4px 12px;
+  border-radius: 100px;
+  transition: all 0.15s;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.history-link:hover {
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .hero-title {

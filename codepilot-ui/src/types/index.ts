@@ -142,3 +142,66 @@ export interface RuleConfidenceResponse {
   minConfidenceThreshold: number
   enabled: boolean
 }
+
+// History / Trends types
+export interface HistoryItem {
+  analysisId: string
+  prNumber: number
+  prTitle: string
+  author: string
+  riskScore: number
+  totalFindings: number
+  status: string
+  createdAt: string
+}
+
+export interface TrendPoint {
+  date: string
+  avgRiskScore: number
+  avgFindings: number
+  maxRiskScore: number
+  minRiskScore: number
+  prCount: number
+}
+
+export interface TrendData {
+  riskScoreTrend: TrendPoint[]
+  findingsTrend: TrendPoint[]
+  prCountTrend: TrendPoint[]
+  overallAvgRiskScore: number
+  overallAvgFindings: number
+  totalPRsAnalyzed: number
+  trendDays: number
+}
+
+export interface ComparisonResult {
+  current: HistoryItem | null
+  previous: HistoryItem | null
+  riskScoreDelta: number
+  findingsDelta: number
+  resolvedFindings: ComparisonFinding[]
+  newFindings: ComparisonFinding[]
+}
+
+export interface ComparisonFinding {
+  ruleName: string
+  category: string
+  file: string
+  message: string
+  isNew: boolean
+}
+
+export interface HistoryPageData {
+  items: HistoryItem[]
+  total: number
+  page: number
+  size: number
+  totalPages: number
+}
+
+export interface RepoInfo {
+  repoKey: string
+  owner: string
+  repo: string
+}
+
