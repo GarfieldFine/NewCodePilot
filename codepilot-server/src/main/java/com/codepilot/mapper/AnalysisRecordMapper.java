@@ -54,7 +54,7 @@ public interface AnalysisRecordMapper extends BaseMapper<AnalysisRecord> {
     List<AnalysisRecord> findRecentGlobal(@Param("limit") int limit);
 
     /** Get all distinct repos that have analysis records */
-    @Select("SELECT DISTINCT CONCAT(owner, '/', repo) as repo_key, owner, repo FROM analysis_record ORDER BY MAX(created_at) DESC")
+    @Select("SELECT CONCAT(owner, '/', repo) as repoKey, owner, repo FROM analysis_record GROUP BY owner, repo ORDER BY MAX(created_at) DESC")
     List<Map<String, Object>> findDistinctRepos();
 
     /** Find previous analysis for a PR to enable comparison */

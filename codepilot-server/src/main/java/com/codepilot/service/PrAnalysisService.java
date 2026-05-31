@@ -1,9 +1,11 @@
 package com.codepilot.service;
 
 import com.codepilot.agent.AgentEvent;
+import com.codepilot.agent.AgentEventType;
 import com.codepilot.cache.AnalysisCacheService;
 import com.codepilot.github.GitHubClient;
 import com.codepilot.github.model.PrInfo;
+import com.codepilot.model.dto.MultiProviderResult;
 import com.codepilot.review.AnalysisResult;
 import com.codepilot.review.ReviewEngine;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +51,18 @@ public class PrAnalysisService {
     public Flux<AgentEvent> analyzePrStream(String prUrl, String providerName) {
         return gitHubClient.fetchPrDetail(prUrl)
                 .flatMapMany(prInfo -> reviewEngine.analyzeStream(prInfo, providerName))
+                .doOnNext(event -> {
+                    if (event.getType() == AgentEventType.ANALYSIS_COMPLETE) {
+                        Object result = event.getMetadata().get("result");
+                        if (result instanceof AnalysisResult ar) {
+                            try {
+                                feedbackService.saveAnalysisRecord(ar);
+                            } catch (Exception e) {
+                                log.warn("Failed to save analysis record: {}", e.getMessage());
+                            }
+                        }
+                    }
+                })
                 .onErrorResume(e -> {
                     log.error("Stream analysis error: {}", e.getMessage());
                     return Flux.just(AgentEvent.error("unknown", e.getMessage()));
@@ -58,6 +72,18 @@ public class PrAnalysisService {
     public Flux<AgentEvent> analyzePrStreamMulti(String prUrl, java.util.List<String> providerNames) {
         return gitHubClient.fetchPrDetail(prUrl)
                 .flatMapMany(prInfo -> reviewEngine.analyzeStreamMulti(prInfo, providerNames))
+                .doOnNext(event -> {
+                    if (event.getType() == AgentEventType.MULTI_PROVIDER_COMPLETE) {
+                        Object result = event.getMetadata().get("result");
+                        if (result instanceof MultiProviderResult mpr) {
+                            try {
+                                feedbackService.saveAnalysisRecord(mpr);
+                            } catch (Exception e) {
+                                log.warn("Failed to save analysis record: {}", e.getMessage());
+                            }
+                        }
+                    }
+                })
                 .onErrorResume(e -> {
                     log.error("Multi-provider stream analysis error: {}", e.getMessage());
                     return Flux.just(AgentEvent.error("unknown", e.getMessage()));

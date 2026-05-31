@@ -7,6 +7,7 @@ import com.codepilot.mapper.EvaluationSampleMapper;
 import com.codepilot.mapper.RuleConfidenceMapper;
 import com.codepilot.mapper.RuleFeedbackMapper;
 import com.codepilot.model.dto.FeedbackSubmitRequest;
+import com.codepilot.model.dto.MultiProviderResult;
 import com.codepilot.model.dto.RuleConfidenceResponse;
 import com.codepilot.model.entity.AnalysisRecord;
 import com.codepilot.model.entity.EvaluationSample;
@@ -135,7 +136,7 @@ public class RuleFeedbackService {
     }
 
     /**
-     * Persist analysis result to DB for history tracking.
+     * Persist analysis result to DB for history tracking (single provider).
      */
     public void saveAnalysisRecord(AnalysisResult result) {
         AnalysisRecord record = new AnalysisRecord();
@@ -152,6 +153,35 @@ public class RuleFeedbackService {
         record.setAnalysisResult(JSONUtil.toJsonStr(result));
         analysisRecordMapper.insert(record);
         log.info("Analysis record saved: {}", result.getAnalysisId());
+    }
+
+    /**
+     * Persist multi-provider analysis result to DB for history tracking.
+     */
+    public void saveAnalysisRecord(MultiProviderResult result) {
+        AnalysisRecord record = new AnalysisRecord();
+        record.setAnalysisId(result.getAnalysisId());
+        record.setOwner(result.getOwner());
+        record.setRepo(result.getRepo());
+        record.setPrNumber(result.getPrNumber());
+        record.setPrTitle(result.getPrTitle());
+        record.setPrUrl(result.getPrUrl());
+        record.setAuthor(result.getAuthor());
+        record.setStatus("COMPLETED");
+        record.setTotalFindings(result.getRuleResults() != null ? result.getRuleResults().size() : 0);
+
+        int riskScore = 0;
+        if (result.getProviderResults() != null && !result.getProviderResults().isEmpty()) {
+            riskScore = (int) result.getProviderResults().values().stream()
+                    .filter(pr -> pr.getRiskScore() != null)
+                    .mapToInt(pr -> pr.getRiskScore().getTotalScore())
+                    .average()
+                    .orElse(0);
+        }
+        record.setRiskScore(riskScore);
+        record.setAnalysisResult(JSONUtil.toJsonStr(result));
+        analysisRecordMapper.insert(record);
+        log.info("Multi-provider analysis record saved: {}", result.getAnalysisId());
     }
 
     private void recalculateRuleConfidence(String ruleName) {
