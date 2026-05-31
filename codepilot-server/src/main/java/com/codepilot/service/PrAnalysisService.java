@@ -1,8 +1,8 @@
 package com.codepilot.service;
 
+import com.codepilot.agent.AgentEvent;
 import com.codepilot.cache.AnalysisCacheService;
 import com.codepilot.github.GitHubClient;
-import com.codepilot.github.exception.GitHubApiException;
 import com.codepilot.github.model.PrInfo;
 import com.codepilot.review.AnalysisResult;
 import com.codepilot.review.ReviewEngine;
@@ -34,7 +34,6 @@ public class PrAnalysisService {
         return gitHubClient.fetchPrDetail(prUrl)
                 .flatMap(prInfo -> {
                     GitHubClient.PrUrlInfo urlInfo = GitHubClient.parsePrUrl(prUrl);
-                    // Check cache first
                     return cacheService.getCached(urlInfo.owner(), urlInfo.repo(), urlInfo.prNumber())
                             .flatMap(cached -> {
                                 if (cached != null) {
@@ -47,13 +46,12 @@ public class PrAnalysisService {
                 });
     }
 
-    public Flux<String> analyzePrStream(String prUrl, String providerName) {
+    public Flux<AgentEvent> analyzePrStream(String prUrl, String providerName) {
         return gitHubClient.fetchPrDetail(prUrl)
                 .flatMapMany(prInfo -> reviewEngine.analyzeStream(prInfo, providerName))
                 .onErrorResume(e -> {
                     log.error("Stream analysis error: {}", e.getMessage());
-                    return Flux.just("{\"type\":\"error\",\"message\":\"" +
-                            escapeJson(e.getMessage()) + "\"}");
+                    return Flux.just(AgentEvent.error("unknown", e.getMessage()));
                 });
     }
 
@@ -61,7 +59,6 @@ public class PrAnalysisService {
                                             GitHubClient.PrUrlInfo urlInfo) {
         return reviewEngine.analyze(prInfo, providerName)
                 .flatMap(result -> {
-                    // Persist to DB for feedback tracking
                     try {
                         feedbackService.saveAnalysisRecord(result);
                     } catch (Exception e) {
@@ -79,11 +76,5 @@ public class PrAnalysisService {
 
     public Mono<AnalysisResult> getCachedResult(String owner, String repo, int prNumber) {
         return cacheService.getCached(owner, repo, prNumber);
-    }
-
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r");
     }
 }

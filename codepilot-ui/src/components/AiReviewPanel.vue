@@ -1,54 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { marked } from 'marked'
 
 const props = defineProps<{ content: string; loading: boolean }>()
 
-const sections = computed(() => {
-  const raw = props.content || ''
-  const parts: { type: string; title: string; content: string }[] = []
-
-  const headers = ['### PR Summary', '### Risk Analysis', '### Review Suggestions', '### Overall Assessment']
-  let lastIdx = 0
-
-  for (let i = 0; i < headers.length; i++) {
-    const header = headers[i]
-    const idx = raw.indexOf(header)
-    if (idx >= 0) {
-      const nextIdx = i + 1 < headers.length ? raw.indexOf(headers[i + 1], idx) : raw.length
-      const next = nextIdx > 0 ? nextIdx : raw.length
-      const sectionContent = raw.substring(idx + header.length, next).trim()
-      parts.push({
-        type: header.replace('### ', '').toLowerCase().replace(/\s+/g, '-'),
-        title: header.replace('### ', ''),
-        content: sectionContent
-      })
-    }
-  }
-
-  if (parts.length === 0 && raw) {
-    parts.push({ type: 'raw', title: 'AI Analysis', content: raw })
-  }
-
-  return parts
+const renderedHtml = computed(() => {
+  if (!props.content) return ''
+  return marked.parse(props.content) as string
 })
-
-function renderMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-    .replace(/^- (.*)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>')
-}
-
-const sectionIcons: Record<string, string> = {
-  'pr-summary': '📋',
-  'risk-analysis': '🔍',
-  'review-suggestions': '💡',
-  'overall-assessment': '✅'
-}
 </script>
 
 <template>
@@ -65,18 +24,7 @@ const sectionIcons: Record<string, string> = {
       <p>AI 正在分析代码变更...</p>
     </div>
 
-    <div v-if="content" class="sections">
-      <div
-        v-for="section in sections"
-        :key="section.type"
-        class="section"
-      >
-        <h4 class="section-header">
-          {{ section.title }}
-        </h4>
-        <div class="section-body" v-html="renderMarkdown(section.content)"></div>
-      </div>
-    </div>
+    <div v-if="content" class="markdown-body" v-html="renderedHtml"></div>
 
     <div v-if="!loading && !content" class="empty">
       <p>等待 AI 评审结果...</p>
@@ -148,52 +96,123 @@ const sectionIcons: Record<string, string> = {
   font-size: 14px;
 }
 
-.section {
-  margin-bottom: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.section:last-child {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.section-header {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 10px;
-}
-
-.section-body {
+.markdown-body {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.7;
 }
 
-.section-body :deep(strong) {
+.markdown-body :deep(h3) {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 24px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-body :deep(h3:first-of-type) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(h4) {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+  color: var(--text-primary);
+}
+
+.markdown-body :deep(h5) {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+  color: var(--text-secondary);
+}
+
+.markdown-body :deep(p) {
+  margin: 8px 0;
+}
+
+.markdown-body :deep(strong) {
   color: var(--text-primary);
   font-weight: 600;
 }
 
-.section-body :deep(.inline-code) {
+.markdown-body :deep(em) {
+  font-style: italic;
+}
+
+.markdown-body :deep(a) {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.markdown-body :deep(code) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.markdown-body :deep(:not(pre) > code) {
   background: var(--code-bg);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 12px;
   color: var(--primary);
 }
 
-.section-body :deep(li) {
-  margin-bottom: 4px;
-  padding-left: 4px;
+.markdown-body :deep(pre) {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
 }
 
-.section-body :deep(ul) {
+.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.markdown-body :deep(li) {
+  margin-bottom: 4px;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
   padding-left: 18px;
   margin: 6px 0;
+}
+
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid var(--primary);
+  padding-left: 12px;
+  margin: 12px 0;
+  color: var(--text-muted);
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.markdown-body :deep(th) {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
 }
 </style>

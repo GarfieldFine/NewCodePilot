@@ -1,5 +1,6 @@
 package com.codepilot.review;
 
+import com.codepilot.ai.model.RiskFinding;
 import com.codepilot.model.enums.RiskLevel;
 import com.codepilot.rule.RuleResult;
 import lombok.AllArgsConstructor;
@@ -21,4 +22,5 @@ public class FileAnalysis {
     private Integer deletions;
     private RiskLevel riskLevel;
     private List<RuleResult> findings;
+    private List<RiskFinding> aiFindings;
 }

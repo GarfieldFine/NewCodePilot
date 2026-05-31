@@ -17,4 +17,8 @@ public class RiskFinding {
     private String category;
     private String description;
     private String suggestion;
+    private String why;
+    private String evidence;
+    private String impact;
+    private Double confidenceScore;
 }

@@ -17,6 +17,10 @@ export interface RiskFinding {
   category: string
   description: string
   suggestion: string
+  why?: string
+  evidence?: string
+  impact?: string
+  confidenceScore?: number
 }
 
 export interface ReviewSuggestion {
@@ -28,6 +32,9 @@ export interface ReviewSuggestion {
   codeSnippet: string
   suggestedFix: string
   priority: string
+  why?: string
+  evidence?: string
+  impact?: string
 }
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
@@ -61,6 +68,27 @@ export interface RiskScore {
   totalDeletions: number
 }
 
+export interface TokenUsage {
+  totalTokens: number
+  promptTokens: number
+  completionTokens: number
+  totalChunks: number
+  successfulChunks: number
+}
+
+export interface ConfidenceScores {
+  overallConfidence: number
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW'
+  factors: Record<string, number>
+  summary: string
+}
+
+export interface RepositoryProfile {
+  projectType: string
+  languages: string[]
+  frameworks: string[]
+}
+
 export interface FileAnalysis {
   filename: string
   language: string
@@ -69,6 +97,7 @@ export interface FileAnalysis {
   deletions: number
   riskLevel: RiskLevel
   findings: RuleResult[]
+  aiFindings?: RiskFinding[]
 }
 
 export interface AnalysisResult {
@@ -87,6 +116,10 @@ export interface AnalysisResult {
   aiRawOutput: string
   status: AnalysisStatus
   fileAnalysis: FileAnalysis[]
+  repositoryProfile?: RepositoryProfile
+  confidenceScores?: ConfidenceScores
+  agentTimeline?: string[]
+  tokenUsage?: TokenUsage
 }
 
 export type AnalysisStatus =
@@ -100,13 +133,39 @@ export type AnalysisStatus =
   | 'COMPLETED'
   | 'FAILED'
 
+export type AgentEventType =
+  | 'AGENT_STARTED' | 'AGENT_RUNNING' | 'AGENT_COMPLETED'
+  | 'AGENT_FAILED' | 'AGENT_SKIPPED' | 'PIPELINE_STAGE'
+  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE' | 'ERROR'
+
+export interface AgentEvent {
+  traceId: string
+  type: AgentEventType
+  agentName: string
+  message: string
+  timestamp: number
+  metadata?: Record<string, any>
+}
+
 export interface SseEvent {
   type: 'status' | 'token' | 'ai_token' | 'complete' | 'error'
+    | AgentEventType
   status?: string
   message?: string
   content?: string
   data?: AnalysisResult
   count?: number
+  agentName?: string
+  traceId?: string
+  timestamp?: number
+  metadata?: Record<string, any>
+}
+
+export interface ChunkProgress {
+  current: number
+  total: number
+  fileName?: string
+  status?: string
 }
 
 export interface PrDetail {
@@ -204,4 +263,3 @@ export interface RepoInfo {
   owner: string
   repo: string
 }
-
