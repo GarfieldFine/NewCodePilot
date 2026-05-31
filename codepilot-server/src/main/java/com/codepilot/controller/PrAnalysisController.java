@@ -58,6 +58,7 @@ public class PrAnalysisController {
             log.info("Multi-provider streaming analysis for: {} with providers: {}",
                     request.getPrUrl(), request.getProviders());
             return prAnalysisService.analyzePrStreamMulti(request.getPrUrl(), request.getProviders())
+                    .doOnNext(e -> log.info("SSE OUT {} {}", System.currentTimeMillis(), e.getType()))
                     .map(event -> ServerSentEvent.<AgentEvent>builder()
                             .id(event.getTraceId())
                             .event(event.getType().name())
@@ -66,6 +67,7 @@ public class PrAnalysisController {
         }
         log.info("Streaming analysis for: {}", request.getPrUrl());
         return prAnalysisService.analyzePrStream(request.getPrUrl(), request.getProvider())
+                .doOnNext(e -> log.info("SSE OUT {} {}", System.currentTimeMillis(), e.getType()))
                 .map(event -> ServerSentEvent.<AgentEvent>builder()
                         .id(event.getTraceId())
                         .event(event.getType().name())

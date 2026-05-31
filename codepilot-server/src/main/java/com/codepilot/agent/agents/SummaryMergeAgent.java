@@ -328,14 +328,14 @@ public class SummaryMergeAgent implements Agent {
     }
 
     private RiskFinding parseSingleAiFinding(String section) {
-        String description = extractField(section, "(?i)(?:Description|Risk|Issue|描述|问题|风险)[：:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Suggestion|Fix|File|Level|原因|证据|影响|建议|修复|文件|级别|行号|$))");
-        String why = extractField(section, "(?i)(?:Why|原因)[：:\\s]*\\n?(.+?)(?=\\n(?:Evidence|Impact|Suggestion|Fix|Description|File|Level|证据|影响|建议|修复|描述|文件|级别|$))");
-        String evidence = extractField(section, "(?i)(?:Evidence|证据)[：:\\s]*\\n?(.+?)(?=\\n(?:Why|Impact|Suggestion|Fix|Description|File|Level|原因|影响|建议|修复|描述|文件|级别|$))");
-        String impact = extractField(section, "(?i)(?:Impact|影响)[：:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Suggestion|Fix|Description|File|Level|原因|证据|建议|修复|描述|文件|级别|$))");
-        String suggestion = extractField(section, "(?i)(?:Suggestion|Fix|Recommendation|建议|修复|推荐)[：:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Description|File|Level|原因|证据|影响|描述|文件|级别|$))");
-        String file = extractField(section, "(?i)(?:File|文件)[：:\\s]*([^\\n]+)");
-        String level = extractField(section, "(?i)(?:Level|级别)[：:\\s]*(HIGH|MEDIUM|LOW|CRITICAL|高|中|低|严重)");
-        String lineStr = extractField(section, "(?i)(?:Line|行号)[：:\\s]*(\\d+)");
+        String description = extractField(section, "(?i)(?:Description|Risk|Issue)[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Suggestion|Fix|File|Level|$))");
+        String why = extractField(section, "(?i)Why[:\\s]*\\n?(.+?)(?=\\n(?:Evidence|Impact|Suggestion|Fix|Description|File|Level|$))");
+        String evidence = extractField(section, "(?i)Evidence[:\\s]*\\n?(.+?)(?=\\n(?:Why|Impact|Suggestion|Fix|Description|File|Level|$))");
+        String impact = extractField(section, "(?i)Impact[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Suggestion|Fix|Description|File|Level|$))");
+        String suggestion = extractField(section, "(?i)(?:Suggestion|Fix|Recommendation)[:\\s]*\\n?(.+?)(?=\\n(?:Why|Evidence|Impact|Description|File|Level|$))");
+        String file = extractField(section, "(?i)File[:\\s]*([^\\n]+)");
+        String level = extractField(section, "(?i)Level[:\\s]*(HIGH|MEDIUM|LOW|CRITICAL)");
+        String lineStr = extractField(section, "(?i)Line[:\\s]*(\\d+)");
 
         Integer line = null;
         if (lineStr != null) {
@@ -373,16 +373,7 @@ public class SummaryMergeAgent implements Agent {
 
     private RiskLevel parseRiskLevel(String level) {
         if (level == null) return RiskLevel.MEDIUM;
-        String trimmed = level.trim();
-        return switch (trimmed) {
-            case "CRITICAL", "严重" -> RiskLevel.CRITICAL;
-            case "HIGH", "高" -> RiskLevel.HIGH;
-            case "MEDIUM", "中" -> RiskLevel.MEDIUM;
-            case "LOW", "低" -> RiskLevel.LOW;
-            default -> {
-                try { yield RiskLevel.valueOf(trimmed.toUpperCase()); }
-                catch (IllegalArgumentException e) { yield RiskLevel.MEDIUM; }
-            }
-        };
+        try { return RiskLevel.valueOf(level.trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { return RiskLevel.MEDIUM; }
     }
 }

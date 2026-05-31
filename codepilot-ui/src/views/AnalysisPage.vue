@@ -47,7 +47,6 @@ function handleFileFocus(file: FileAnalysis) {
 function handleFocusClose() {
   focusedFile.value = null
 }
-
 function handleExport() {
   if (!store.result) return
   const md = generateMarkdownReport(store.result)
@@ -115,7 +114,7 @@ function handleExport() {
       <aside class="left-sidebar">
         <PrSummary :result="store.result" />
 
-        <!-- Agent workflow timeline -->
+        <!-- Agent workflow timeline — replaces old StreamingTimeline -->
         <AiThinkingTimeline
           v-if="store.agentEvents.length > 0 || store.loading"
           :agent-events="store.agentEvents"
@@ -155,7 +154,7 @@ function handleExport() {
           @select="handleHeatmapSelect"
         />
 
-        <!-- File analysis list -->
+        <!-- File analysis list (condensed below heatmap) -->
         <FileAnalysisList
           v-if="store.result?.fileAnalysis"
           :files="store.result.fileAnalysis"
@@ -243,6 +242,7 @@ function handleExport() {
 .back-btn:hover {
   border-color: var(--border-light);
   color: var(--text-primary);
+  box-shadow: var(--shadow-glow-sm);
 }
 
 .top-title {

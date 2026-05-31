@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -22,5 +23,6 @@ public class FileAnalysis {
     private Integer deletions;
     private RiskLevel riskLevel;
     private List<RuleResult> findings;
-    private List<RiskFinding> aiFindings;
+    @Builder.Default
+    private List<RiskFinding> aiFindings = new ArrayList<>();
 }

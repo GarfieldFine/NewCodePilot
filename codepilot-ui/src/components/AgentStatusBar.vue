@@ -1,96 +1,136 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { TokenUsage, ChunkProgress } from '@/types'
 
-defineProps<{
+const props = defineProps<{
   activeAgents: string[]
   tokenUsage: TokenUsage | null
   status: string
   chunkProgress?: ChunkProgress | null
 }>()
 
-function formatTokens(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
-  return String(n)
-}
+const agentCount = computed(() => props.activeAgents.length)
+
+const tokenDisplay = computed(() => {
+  if (!props.tokenUsage || props.tokenUsage.totalTokens === 0) return null
+  const k = Math.round(props.tokenUsage.totalTokens / 1000)
+  return `${k}K tokens`
+})
+
+const chunkDisplay = computed(() => {
+  if (!props.tokenUsage) return null
+  const t = props.tokenUsage
+  if (t.totalChunks === 0) return null
+  return `${t.successfulChunks}/${t.totalChunks} chunks`
+})
+
+const isRunning = computed(() =>
+  props.status && props.status !== 'COMPLETED' && props.status !== 'FAILED'
+)
 </script>
 
 <template>
-  <div class="agent-bar">
-    <div class="bar-left">
-      <div
-        v-for="agent in activeAgents"
-        :key="agent"
-        class="agent-badge"
-      >
-        <span class="pulse-dot"></span>
-        {{ agent }}
+  <div class="agent-status-bar" v-if="isRunning || tokenUsage">
+    <!-- Live agent indicators -->
+    <div class="status-section" v-if="isRunning && activeAgents.length > 0">
+      <div class="agent-badges">
+        <span
+          v-for="name in activeAgents"
+          :key="name"
+          class="agent-badge"
+        >
+          <span class="badge-dot"></span>
+          {{ name.replace('Agent', '') }}
+        </span>
       </div>
-      <span v-if="activeAgents.length > 0" class="running-hint">
-        <span class="dots-anim"><span>.</span><span>.</span><span>.</span></span>
-      </span>
-      <span v-if="activeAgents.length === 0 && status && status !== 'COMPLETED' && status !== 'FAILED'" class="running-hint">
-        处理中<span class="dots-anim"><span>.</span><span>.</span><span>.</span></span>
-      </span>
     </div>
 
-    <div class="bar-right">
-      <div v-if="chunkProgress && chunkProgress.total > 0" class="chunk-info">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
+    <!-- Chunk progress -->
+    <div class="chunk-section" v-if="chunkProgress && chunkProgress.total > 0">
+      <div class="chunk-info">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
         </svg>
-        <span>{{ chunkProgress.current }}/{{ chunkProgress.total }}</span>
-        <span v-if="chunkProgress.fileName" class="chunk-file">{{ chunkProgress.fileName }}</span>
+        <span class="chunk-label">Analyzing</span>
+        <span class="chunk-counter">{{ chunkProgress.current }}/{{ chunkProgress.total }}</span>
+        <span class="chunk-filename" v-if="chunkProgress.fileName">{{ chunkProgress.fileName }}</span>
       </div>
+      <div class="chunk-bar">
+        <div class="chunk-fill" :style="{ width: (chunkProgress.current / chunkProgress.total * 100) + '%' }"></div>
+      </div>
+    </div>
 
-      <div v-if="tokenUsage" class="token-info">
-        <span title="Prompt tokens">{{ formatTokens(tokenUsage.promptTokens) }}</span>
-        <span class="token-sep">+</span>
-        <span title="Completion tokens">{{ formatTokens(tokenUsage.completionTokens) }}</span>
-        <span class="token-sep">=</span>
-        <span title="Total tokens">{{ formatTokens(tokenUsage.totalTokens) }}</span>
-        <span class="token-label">tokens</span>
+    <!-- Token & chunk stats -->
+    <div class="stats-section" v-if="tokenUsage">
+      <div class="stat" v-if="tokenDisplay" :title="`Prompt: ${tokenUsage.promptTokens} | Completion: ${tokenUsage.completionTokens}`">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+        {{ tokenDisplay }}
       </div>
+      <div class="stat" v-if="chunkDisplay">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        {{ chunkDisplay }}
+      </div>
+    </div>
+
+    <!-- Running indicator -->
+    <div class="running-indicator" v-if="isRunning">
+      <span class="running-text">Agent {{ agentCount }} 运行中</span>
+      <span class="running-dots">
+        <span></span><span></span><span></span>
+      </span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.agent-bar {
+.agent-status-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--bg-card);
+  gap: 16px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  min-height: 40px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  flex-wrap: wrap;
 }
 
-.bar-left, .bar-right {
+.status-section {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.agent-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .agent-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 3px 10px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 12px;
-  background: var(--bg-elevated);
   font-size: 11px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  color: var(--primary);
+  font-weight: 500;
 }
 
-.pulse-dot {
+.badge-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--primary);
-  animation: pulse-dot 1.5s ease-in-out infinite;
+  animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
@@ -98,48 +138,110 @@ function formatTokens(n: number): string {
   50% { opacity: 0.3; }
 }
 
-.running-hint {
-  font-size: 11px;
+.stats-section {
+  display: flex;
+  gap: 14px;
+  margin-left: auto;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
-.dots-anim span {
-  animation: dot-seq 1.4s ease-in-out infinite;
+.stat svg {
+  opacity: 0.5;
 }
-.dots-anim span:nth-child(2) { animation-delay: 0.2s; }
-.dots-anim span:nth-child(3) { animation-delay: 0.4s; }
 
-@keyframes dot-seq {
-  0%, 80%, 100% { opacity: 0.2; }
-  40% { opacity: 1; }
+.chunk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
 }
 
 .chunk-info {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   color: var(--text-muted);
 }
 
-.chunk-info svg { opacity: 0.6; }
+.chunk-info svg {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
 
-.chunk-file {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.chunk-label {
   white-space: nowrap;
 }
 
-.token-info {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+.chunk-counter {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--primary);
 }
 
-.token-sep { opacity: 0.5; }
-.token-label { opacity: 0.6; margin-left: 2px; }
+.chunk-filename {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.chunk-bar {
+  width: 100%;
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.chunk-fill {
+  height: 100%;
+  background: var(--gradient-hero);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.running-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.running-text {
+  white-space: nowrap;
+}
+
+.running-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.running-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: dots-fade 1.4s ease-in-out infinite;
+}
+
+.running-dots span:nth-child(2) { animation-delay: 0.2s; }
+.running-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dots-fade {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 0.8; }
+}
 </style>

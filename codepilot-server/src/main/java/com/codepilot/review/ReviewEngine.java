@@ -30,9 +30,9 @@ import java.util.*;
  * Review engine orchestrating the multi-agent pipeline.
  *
  * Stage 1 (SEQUENTIAL): RepositoryAnalyze → DiffAnalyze → ContextBuild
- * Stage 2 (SEQUENTIAL): RiskDetect
- * Stage 3 (SEQUENTIAL): ReviewGenerate
- * Stage 4 (FINAL):    SummaryMerge
+ * Stage 2 (PARALLEL):    RiskDetect
+ * Stage 3 (SEQUENTIAL):  ReviewGenerate
+ * Stage 4 (FINAL):       SummaryMerge
  */
 @Slf4j
 @Component
@@ -84,6 +84,7 @@ public class ReviewEngine {
 
     /**
      * Execute full PR analysis using the multi-agent pipeline.
+     * Maintains backward compatibility with existing PrAnalysisService.
      */
     public Mono<AnalysisResult> analyze(PrInfo prInfo, String providerName) {
         AiProvider aiProvider = aiProviderFactory.getProvider(providerName);
@@ -124,9 +125,12 @@ public class ReviewEngine {
 
         List<PipelineStage> stages = buildStages();
 
+        // Use streaming pipeline so agents can emit CHUNK_PROGRESS + AI_TOKEN events
+        // Offload to boundedElastic to avoid blocking the Netty event loop
         Flux<AgentEvent> agentEvents = agentPipeline.executeStreaming(stages, agentContext)
                 .subscribeOn(Schedulers.boundedElastic());
 
+        // After agents complete, emit ANALYSIS_COMPLETE with final result
         Flux<AgentEvent> completionEvent = Flux.defer(() -> {
             AnalysisResult result = agentContext.getFinalResult();
             if (result == null) {

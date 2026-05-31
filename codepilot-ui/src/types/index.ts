@@ -18,6 +18,7 @@ export interface RiskFinding {
   category: string
   description: string
   suggestion: string
+  // Explainability fields (Phase 7)
   why?: string
   evidence?: string
   impact?: string
@@ -33,6 +34,7 @@ export interface ReviewSuggestion {
   codeSnippet: string
   suggestedFix: string
   priority: string
+  // Explainability fields (Phase 7)
   why?: string
   evidence?: string
   impact?: string
@@ -117,6 +119,7 @@ export interface AnalysisResult {
   aiRawOutput: string
   status: AnalysisStatus
   fileAnalysis: FileAnalysis[]
+  // Phase 2+ fields
   repositoryProfile?: RepositoryProfile
   confidenceScores?: ConfidenceScores
   agentTimeline?: string[]

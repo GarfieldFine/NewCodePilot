@@ -83,6 +83,7 @@ public class GitHubClient {
     /**
      * Fetches the repository root directory file listing.
      * Used by RepositoryAnalyzer to detect build files and project structure.
+     * Returns a list of file/folder names at the repository root.
      */
     public Mono<List<String>> fetchRepoContents(String owner, String repo) {
         log.debug("Fetching repo contents: {}/{}", owner, repo);

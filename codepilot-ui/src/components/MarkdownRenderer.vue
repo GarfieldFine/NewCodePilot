@@ -1,171 +1,282 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { marked } from 'marked'
+import { marked, Renderer } from 'marked'
 import hljs from 'highlight.js'
+
+// Custom renderer with highlight.js integration for marked v12+
+const renderer = new Renderer()
+renderer.code = function(code: string, infostring: string | undefined, _escaped: boolean): string {
+  const lang = infostring || ''
+  let highlighted: string
+  if (lang && hljs.getLanguage(lang)) {
+    try {
+      highlighted = hljs.highlight(code, { language: lang }).value
+    } catch {
+      highlighted = hljs.highlightAuto(code).value
+    }
+  } else {
+    highlighted = hljs.highlightAuto(code).value
+  }
+  return `<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre>\n`
+}
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  renderer
+})
 
 const props = defineProps<{ content: string; loading: boolean }>()
 
-marked.use({
-  renderer: {
-    code(code: string, infostring: string | undefined, _escaped: boolean) {
-      const language = infostring || ''
-      const highlighted = language && hljs.getLanguage(language)
-        ? hljs.highlight(code, { language }).value
-        : hljs.highlightAuto(code).value
-      return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>\n`
+const sections = computed(() => {
+  const raw = props.content || ''
+  const parts: { type: string; title: string; html: string }[] = []
+
+  const headers = ['### PR Summary', '### Risk Analysis', '### Review Suggestions', '### Overall Assessment']
+
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i]
+    const idx = raw.indexOf(header)
+    if (idx >= 0) {
+      const nextIdx = i + 1 < headers.length ? raw.indexOf(headers[i + 1], idx) : raw.length
+      const next = nextIdx > 0 ? nextIdx : raw.length
+      const sectionContent = raw.substring(idx + header.length, next).trim()
+      parts.push({
+        type: header.replace('### ', '').toLowerCase().replace(/\s+/g, '-'),
+        title: header.replace('### ', ''),
+        html: marked.parse(sectionContent) as string
+      })
     }
   }
-})
 
-const renderedHtml = computed(() => {
-  if (!props.content) return ''
-  return marked.parse(props.content) as string
+  // Fallback: render entire content as single section
+  if (parts.length === 0 && raw) {
+    parts.push({
+      type: 'raw',
+      title: 'AI Analysis',
+      html: marked.parse(raw) as string
+    })
+  }
+
+  return parts
 })
 </script>
 
 <template>
   <div class="markdown-renderer">
-    <div v-if="loading && !content" class="loading-state">
-      <span class="loading-dot"></span>
-      <span class="loading-dot"></span>
-      <span class="loading-dot"></span>
-      <span class="loading-text">AI is analyzing code changes...</span>
+    <div v-if="loading && !content" class="ai-thinking">
+      <div class="thinking-particles">
+        <span v-for="i in 12" :key="i" class="particle" :style="{ '--i': i }"></span>
+      </div>
+      <p>AI 正在分析代码变更...</p>
     </div>
-    <div v-else-if="content" class="markdown-body" v-html="renderedHtml"></div>
-    <div v-else class="empty-state">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="16" y1="13" x2="8" y2="13"/>
-        <line x1="16" y1="17" x2="8" y2="17"/>
-        <polyline points="10 9 9 9 8 9"/>
+
+    <div v-if="content" class="sections">
+      <div v-for="section in sections" :key="section.type" class="section">
+        <h4 class="section-header">{{ section.title }}</h4>
+        <div class="section-body" v-html="section.html"></div>
+      </div>
+    </div>
+
+    <div v-if="!loading && !content" class="empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
       </svg>
-      <span>Waiting for AI review results...</span>
+      <p>等待 AI 评审结果...</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-.markdown-renderer { min-height: 200px; }
-
-.loading-state {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 0;
+.markdown-renderer {
+  min-height: 300px;
 }
 
-.loading-dot {
-  width: 6px;
-  height: 6px;
+/* AI Thinking with particles */
+.ai-thinking {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  gap: 24px;
+  position: relative;
+}
+
+.thinking-particles {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--primary);
-  animation: dot-bounce 1.4s ease-in-out infinite both;
-}
-.loading-dot:nth-child(2) { animation-delay: 0.16s; }
-.loading-dot:nth-child(3) { animation-delay: 0.32s; }
-
-@keyframes dot-bounce {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-  40% { opacity: 1; transform: scale(1.2); }
+  animation: particle-orbit 2.4s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.2s);
+  opacity: 0;
 }
 
-.loading-text {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-left: 8px;
+@keyframes particle-orbit {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(calc(var(--i) * 30deg)) translateX(24px) scale(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) rotate(calc(var(--i) * 30deg + 180deg)) translateX(24px) scale(1.2);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(calc(var(--i) * 30deg + 360deg)) translateX(24px) scale(0);
+  }
 }
 
-.empty-state {
+.empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  height: 200px;
   color: var(--text-muted);
-  font-size: 13px;
-  padding: 20px 0;
-}
-.empty-state svg { opacity: 0.5; }
-
-.markdown-body {
-  color: var(--text-primary);
   font-size: 14px;
+  gap: 12px;
+}
+
+.section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.section-header {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.section-body {
+  font-size: 13px;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
-.markdown-body :deep(h3) {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 20px 0 10px;
+/* Markdown element styles */
+.section-body :deep(strong) {
   color: var(--text-primary);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
-}
-
-.markdown-body :deep(h4) {
-  font-size: 13px;
   font-weight: 600;
-  margin: 16px 0 6px;
-  color: var(--text-secondary);
 }
 
-.markdown-body :deep(p) { margin: 8px 0; }
+.section-body :deep(em) {
+  color: var(--accent);
+}
 
-.markdown-body :deep(ul), .markdown-body :deep(ol) {
+.section-body :deep(code) {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.section-body :deep(pre) {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.section-body :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.section-body :deep(ul), .section-body :deep(ol) {
   padding-left: 20px;
   margin: 8px 0;
 }
 
-.markdown-body :deep(li) { margin: 4px 0; }
+.section-body :deep(li) {
+  margin-bottom: 4px;
+}
 
-.markdown-body :deep(code) {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+.section-body :deep(p) {
+  margin-bottom: 8px;
+}
+
+.section-body :deep(h1), .section-body :deep(h2), .section-body :deep(h3) {
+  color: var(--text-primary);
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+
+.section-body :deep(blockquote) {
+  border-left: 3px solid var(--primary);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--text-muted);
+  background: rgba(99, 102, 241, 0.04);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.section-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
   font-size: 12px;
 }
 
-.markdown-body :deep(pre) {
-  background: var(--bg-elevated);
+.section-body :deep(th), .section-body :deep(td) {
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px;
-  overflow-x: auto;
-  margin: 12px 0;
-}
-
-.markdown-body :deep(pre code) {
-  background: none;
-  padding: 0;
-}
-
-.markdown-body :deep(:not(pre) > code) {
-  background: var(--bg-elevated);
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.markdown-body :deep(strong) { font-weight: 600; color: var(--text-primary); }
-
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--primary);
-  padding-left: 12px;
-  margin: 12px 0;
-  color: var(--text-secondary);
-}
-
-.markdown-body :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 12px 0;
-}
-
-.markdown-body :deep(th), .markdown-body :deep(td) {
-  border: 1px solid var(--border);
-  padding: 8px 12px;
+  padding: 6px 10px;
   text-align: left;
-  font-size: 13px;
 }
 
-.markdown-body :deep(th) {
+.section-body :deep(th) {
   background: var(--bg-elevated);
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+
+.section-body :deep(a) {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.section-body :deep(a:hover) {
+  text-decoration: underline;
 }
 </style>

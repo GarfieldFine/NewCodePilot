@@ -118,7 +118,6 @@ public class AgentContext {
     public void setAnalysisId(String analysisId) { this.analysisId = analysisId; }
 
     public Map<String, Object> getMetadata() { return metadata; }
-
     /**
      * Clone this context for a different AI provider.
      * Shared state from stages 1-2 is defensively copied; provider-specific state is reset.

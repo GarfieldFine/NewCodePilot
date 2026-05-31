@@ -32,7 +32,6 @@ export const useAnalysisStore = defineStore('analysis', () => {
     displayProvider.value = name
     const saved = providerResults.value[name]
     if (saved) {
-      // Merge provider-specific fields into result, preserving shared fields
       if (result.value) {
         result.value = {
           ...result.value,
@@ -53,6 +52,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     }
   }
 
+  // Computed agent workflow progress
   const completedAgents = computed(() =>
     agentEvents.value.filter(e => e.type === 'AGENT_COMPLETED').map(e => e.agentName)
   )
@@ -122,6 +122,10 @@ export const useAnalysisStore = defineStore('analysis', () => {
   function handleSseEvent(event: SseEvent) {
     const etype = event.type as string
 
+
+
+    // Legacy status events (from SseEmitterService for blocking flow)
+
     if (etype === 'status') {
       if (event.status) {
         status.value = event.status as AnalysisStatus
@@ -137,12 +141,20 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
+
+
+    // Legacy token events
+
     if (etype === 'token' || etype === 'ai_token') {
       if (event.content) {
         aiStream.value += event.content
       }
       return
     }
+
+
+
+    // Agent lifecycle events
 
     if (etype === 'AGENT_STARTED') {
       const name = event.agentName || ''
@@ -187,8 +199,9 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
+
+    // Chunk progress events
     if (etype === 'CHUNK_PROGRESS') {
-      const pName = event.metadata?.providerName as string | undefined
       if (event.metadata) {
         chunkProgress.value = {
           current: (event.metadata.chunkIndex ?? 0) + 1,
@@ -200,13 +213,14 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
+
+    // AI token events
     if (etype === 'AI_TOKEN') {
       const pName = event.metadata?.providerName as string | undefined
       if (event.metadata?.content) {
         if (pName && selectedProviders.value.length > 1) {
           if (!providerStreams.value[pName]) providerStreams.value[pName] = ''
           providerStreams.value[pName] += event.metadata.content
-          // Also stream to main view if this provider is currently displayed
           if (pName === displayProvider.value) {
             aiStream.value += event.metadata.content
           }
@@ -217,13 +231,14 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
+
+    // Analysis complete
     if (etype === 'ANALYSIS_COMPLETE') {
       const pName = event.metadata?.providerName as string | undefined
       if (pName && selectedProviders.value.length > 1) {
         if (event.metadata?.result) {
           providerResults.value = { ...providerResults.value, [pName]: event.metadata.result as AnalysisResult }
         }
-        // Auto-display first completed provider
         if (!displayProvider.value) {
           switchProvider(pName)
         }
@@ -243,12 +258,17 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
+
+
+    // Error event
+
     if (etype === 'ERROR') {
       error.value = event.message || 'Unknown error'
       status.value = 'FAILED'
       loading.value = false
       return
     }
+
 
     if (etype === 'MULTI_PROVIDER_COMPLETE') {
       if (event.metadata?.result) {
@@ -292,7 +312,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
       return
     }
 
-    // Legacy complete event
+    // Legacy complete event (from SseEmitterService)
     if (etype === 'complete') {
       if (event.data) {
         result.value = event.data
@@ -307,6 +327,10 @@ export const useAnalysisStore = defineStore('analysis', () => {
       loading.value = false
       return
     }
+
+
+
+    // Legacy error event
 
     if (etype === 'error') {
       error.value = event.message || 'Unknown error'
@@ -332,8 +356,11 @@ export const useAnalysisStore = defineStore('analysis', () => {
     result, status, statusMessage, aiStream, loading, error, prUrl,
     sseStatusHistory, agentEvents, activeAgents, tokenUsage, confidence,
     completedAgents, failedAgents, currentStage, agentLog, chunkProgress,
+
     selectedProviders, providerResults, providerStreams, isMultiProvider,
     displayProvider, switchProvider,
+
+
     reset, startStreaming, handleSseEvent
   }
 })
