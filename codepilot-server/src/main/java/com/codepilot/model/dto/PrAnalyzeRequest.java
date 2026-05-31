@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class PrAnalyzeRequest {
 
@@ -13,4 +15,6 @@ public class PrAnalyzeRequest {
     private String prUrl;
 
     private String provider;
+
+    private List<String> providers;
 }

@@ -12,6 +12,16 @@ const router = createRouter({
       path: '/analysis',
       name: 'analysis',
       component: () => import('@/views/AnalysisPage.vue')
+    },
+    {
+      path: '/history',
+      name: 'history',
+      component: () => import('@/views/HistoryPage.vue')
+    },
+    {
+      path: '/comparison',
+      name: 'comparison',
+      component: () => import('@/views/ComparisonPage.vue')
     }
   ]
 })

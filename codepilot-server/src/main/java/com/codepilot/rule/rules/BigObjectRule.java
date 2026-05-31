@@ -38,6 +38,11 @@ public class BigObjectRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.50; // subjective: default constructors are often fine
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 

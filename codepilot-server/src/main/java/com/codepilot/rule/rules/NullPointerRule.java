@@ -37,6 +37,11 @@ public class NullPointerRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.65; // pattern-based, moderate false positive risk
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 

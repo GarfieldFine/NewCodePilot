@@ -1,23 +1,25 @@
-## Pull Request Review
+## 代码片段评审
 
-### Files in This Chunk
+请仅评审以下代码片段，只输出你发现的具体问题。
+
+### 变更文件
 {{fileSummary}}
 
-### Project Context
+### 项目上下文
 {{projectContext}}
 
-### Code Diff
+### 代码差异
 ```diff
 {{diff}}
 ```
 
-### Related Code Context
+### 相关代码
 {{relatedCode}}
 
-### Static Analysis Findings (for reference)
+### 静态分析发现
 {{ruleFindings}}
 
-### Commit Messages
+### 提交记录
 {{commits}}
 
-Provide a thorough code review following the structured output format specified in the system prompt. Focus on the specific files and changes in this chunk.
+记住：不要自我介绍，不要输出 PR 概述或总体评估，只列出你发现的具体问题。

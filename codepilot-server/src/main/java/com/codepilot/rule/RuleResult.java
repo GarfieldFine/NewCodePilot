@@ -20,4 +20,10 @@ public class RuleResult {
     private String suggestion;
     private String codeSnippet;
     private boolean matched;
+    /** Confidence score of this finding (0.0-1.0). Below threshold means needs AI secondary review. */
+    @Builder.Default
+    private double confidence = 1.0;
+    /** True if this finding passed the confidence threshold and is considered reliable. */
+    @Builder.Default
+    private boolean confidencePassed = true;
 }

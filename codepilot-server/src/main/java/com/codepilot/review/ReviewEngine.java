@@ -10,6 +10,7 @@ import com.codepilot.ai.AiProvider;
 import com.codepilot.ai.AiProviderFactory;
 import com.codepilot.github.model.PrFile;
 import com.codepilot.github.model.PrInfo;
+import com.codepilot.model.dto.MultiProviderResult;
 import com.codepilot.model.enums.AnalysisStatus;
 import com.codepilot.model.enums.RiskLevel;
 import com.codepilot.rule.RuleEngine;
@@ -107,7 +108,7 @@ public class ReviewEngine {
             }
 
             return buildResultLegacy(prInfo, agentContext);
-        }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
@@ -145,6 +146,28 @@ public class ReviewEngine {
                 });
     }
 
+    private List<PipelineStage> buildSharedStages() {
+        return List.of(
+                new PipelineStage("Understanding Repository",
+                        List.of(repositoryAnalyzeAgent, diffAnalyzeAgent, contextBuildAgent),
+                        ExecutionMode.SEQUENTIAL),
+                new PipelineStage("Detecting Risks",
+                        List.of(riskDetectAgent),
+                        ExecutionMode.SEQUENTIAL)
+        );
+    }
+
+    private List<PipelineStage> buildProviderStages(String providerName) {
+        return List.of(
+                new PipelineStage("Generating AI Review [" + providerName + "]",
+                        List.of(reviewGenerateAgent),
+                        ExecutionMode.SEQUENTIAL),
+                new PipelineStage("Merging Analysis [" + providerName + "]",
+                        List.of(summaryMergeAgent),
+                        ExecutionMode.SEQUENTIAL)
+        );
+    }
+
     private List<PipelineStage> buildStages() {
         return List.of(
                 new PipelineStage("Understanding Repository",
@@ -160,6 +183,94 @@ public class ReviewEngine {
                         List.of(summaryMergeAgent),
                         ExecutionMode.SEQUENTIAL)
         );
+    }
+
+    /**
+     * Execute multi-provider streaming analysis.
+     * Shared stages (1-2) run once, then provider-specific stages (3-4) run per provider in parallel.
+     */
+    public Flux<AgentEvent> analyzeStreamMulti(PrInfo prInfo, java.util.List<String> providerNames) {
+        String primaryProvider = providerNames.get(0);
+        AgentContext sharedContext = AgentContext.from(prInfo, primaryProvider);
+        sseService.createEmitter(sharedContext.getAnalysisId());
+
+        log.info("Starting multi-provider stream analysis {} with providers: {}",
+                sharedContext.getAnalysisId(), providerNames);
+
+        java.util.List<com.codepilot.agent.AgentPipeline.PipelineStage> sharedStages = buildSharedStages();
+
+        Flux<AgentEvent> sharedEvents = agentPipeline.executeStreaming(sharedStages, sharedContext)
+                .subscribeOn(Schedulers.boundedElastic());
+
+        Flux<AgentEvent> providerFlux = Flux.defer(() -> {
+            java.util.List<Flux<AgentEvent>> fluxes = new java.util.ArrayList<>();
+            java.util.Map<String, com.codepilot.model.dto.MultiProviderResult.ProviderResult> providerResults
+                    = new java.util.LinkedHashMap<>();
+
+            for (String providerName : providerNames) {
+                AgentContext clonedCtx = sharedContext.cloneForProvider(providerName);
+                java.util.List<com.codepilot.agent.AgentPipeline.PipelineStage> providerStages
+                        = buildProviderStages(providerName);
+
+                Flux<AgentEvent> taggedFlux = agentPipeline
+                        .executeStreaming(providerStages, clonedCtx)
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .map(event -> {
+                            event.getMetadata().put("providerName", providerName);
+                            return event;
+                        })
+                        .doOnComplete(() -> {
+                            com.codepilot.review.AnalysisResult providerResult = clonedCtx.getFinalResult();
+                            if (providerResult != null) {
+                                providerResults.put(providerName,
+                                        com.codepilot.model.dto.MultiProviderResult.ProviderResult.builder()
+                                                .providerName(providerName)
+                                                .riskScore(providerResult.getRiskScore())
+                                                .aiRawOutput(providerResult.getAiRawOutput())
+                                                .tokenUsage(providerResult.getTokenUsage())
+                                                .confidenceScores(providerResult.getConfidenceScores())
+                                                .agentTimeline(providerResult.getAgentTimeline())
+                                                .build());
+                            }
+                        });
+
+                fluxes.add(taggedFlux);
+            }
+
+            Flux<AgentEvent> mergedProviderFlux = Flux.merge(fluxes);
+
+            com.codepilot.model.dto.MultiProviderResult finalResult = buildMultiResult(prInfo, sharedContext, providerResults);
+
+            return Flux.concat(mergedProviderFlux,
+                    Flux.just(AgentEvent.multiProviderComplete(sharedContext.getAnalysisId(), finalResult)));
+        });
+
+        return Flux.concat(sharedEvents, providerFlux)
+                .onErrorResume(e -> {
+                    log.error("Multi-provider pipeline error: {}", e.getMessage());
+                    return Flux.just(AgentEvent.error(sharedContext.getAnalysisId(), e.getMessage()));
+                });
+    }
+
+    private com.codepilot.model.dto.MultiProviderResult buildMultiResult(
+            PrInfo prInfo, AgentContext sharedContext,
+            java.util.Map<String, com.codepilot.model.dto.MultiProviderResult.ProviderResult> providerResults) {
+        return com.codepilot.model.dto.MultiProviderResult.builder()
+                .analysisId(sharedContext.getAnalysisId())
+                .prTitle(prInfo.getTitle())
+                .prUrl(prInfo.getHtmlUrl())
+                .prNumber(prInfo.getNumber())
+                .owner(prInfo.getOwner())
+                .repo(prInfo.getRepo())
+                .author(prInfo.getAuthor())
+                .changedFiles(prInfo.getChangedFiles())
+                .additions(prInfo.getAdditions())
+                .deletions(prInfo.getDeletions())
+                .ruleResults(sharedContext.getRuleResults())
+                .fileAnalysis(buildFileAnalysis(prInfo, sharedContext.getRuleResults()))
+                .repositoryProfile(sharedContext.getRepositoryContext())
+                .providerResults(providerResults)
+                .build();
     }
 
     /**

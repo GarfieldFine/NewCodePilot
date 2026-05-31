@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, AnalysisResult, PrAnalyzeRequest, PrDetail } from '@/types'
+import type { ApiResponse, AnalysisResult, PrAnalyzeRequest, PrDetail, FeedbackSubmitRequest, RuleConfidenceResponse, HistoryPageData, TrendData, ComparisonResult, HistoryItem, RepoInfo } from '@/types'
 
 const http = axios.create({
   baseURL: '/api/v1',
@@ -104,3 +104,46 @@ export async function getCachedResult(owner: string, repo: string, prNumber: num
   const res = await http.get<ApiResponse<AnalysisResult>>(`/pr/cache/${owner}/${repo}/${prNumber}`)
   return res.data.data
 }
+
+// Feedback API
+export async function submitFeedback(data: FeedbackSubmitRequest): Promise<void> {
+  await http.post('/feedback', data)
+}
+
+export async function getRuleStats(ruleName?: string): Promise<RuleConfidenceResponse | RuleConfidenceResponse[]> {
+  const url = ruleName ? `/feedback/stats/${ruleName}` : '/feedback/stats'
+  const res = await http.get<ApiResponse<RuleConfidenceResponse | RuleConfidenceResponse[]>>(url)
+  return res.data.data
+}
+
+// History / Trends API
+export async function getHistory(owner: string, repo: string, page = 1, size = 20): Promise<HistoryPageData> {
+  const res = await http.get<ApiResponse<HistoryPageData>>(`/history/${owner}/${repo}`, { params: { page, size } })
+  return res.data.data
+}
+
+export async function getTrends(owner: string, repo: string, days = 30): Promise<TrendData> {
+  const res = await http.get<ApiResponse<TrendData>>(`/trends/${owner}/${repo}`, { params: { days } })
+  return res.data.data
+}
+
+export async function comparePR(owner: string, repo: string, prNumber: number): Promise<ComparisonResult> {
+  const res = await http.get<ApiResponse<ComparisonResult>>(`/compare/${owner}/${repo}/${prNumber}`)
+  return res.data.data
+}
+
+export async function getRecentHistory(limit = 10): Promise<HistoryItem[]> {
+  const res = await http.get<ApiResponse<HistoryItem[]>>('/history/recent', { params: { limit } })
+  return res.data.data
+}
+
+export async function getRepos(): Promise<RepoInfo[]> {
+  const res = await http.get<ApiResponse<RepoInfo[]>>('/history/repos')
+  return res.data.data
+}
+
+export async function getAnalysisResult(analysisId: string): Promise<AnalysisResult | null> {
+  const res = await http.get<AnalysisResult>(`/analysis/${analysisId}`)
+  return res.data
+}
+

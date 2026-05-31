@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { RuleResult } from '@/types'
+import { submitFeedback } from '@/api'
 
-defineProps<{ findings: RuleResult[] }>()
+const props = defineProps<{
+  findings: RuleResult[]
+  analysisId?: string
+}>()
+
+const feedbackState = ref<Record<string, { loading: boolean; done: boolean; type: string }>>({})
 
 const riskConfig: Record<string, { color: string; bg: string }> = {
   LOW: { color: 'var(--risk-low)', bg: 'rgba(52,211,153,0.08)' },
@@ -20,6 +27,33 @@ const categoryIcons: Record<string, string> = {
   DATABASE: '🗄️',
   PERFORMANCE: '⚡',
   MEMORY: '🧠'
+}
+
+function findingKey(index: number): string {
+  return `${props.findings[index]?.ruleName}-${index}`
+}
+
+async function handleFeedback(index: number, type: 'CONFIRMED' | 'FALSE_POSITIVE') {
+  const key = findingKey(index)
+  const finding = props.findings[index]
+  if (!finding || !props.analysisId) return
+
+  feedbackState.value[key] = { loading: true, done: false, type }
+
+  try {
+    await submitFeedback({
+      analysisId: props.analysisId,
+      findingId: `${finding.ruleName}-${index}`,
+      ruleName: finding.ruleName,
+      category: finding.category,
+      fileName: finding.file ?? undefined,
+      lineNumber: finding.line ?? undefined,
+      feedbackType: type
+    })
+    feedbackState.value[key] = { loading: false, done: true, type }
+  } catch {
+    feedbackState.value[key] = { loading: false, done: false, type }
+  }
 }
 </script>
 
@@ -62,6 +96,42 @@ const categoryIcons: Record<string, string> = {
       <div v-if="finding.file" class="finding-file">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         {{ finding.file }}<template v-if="finding.line">:{{ finding.line }}</template>
+      </div>
+
+      <!-- Confidence indicator -->
+      <div v-if="finding.confidence !== undefined" class="confidence-row">
+        <span
+          class="confidence-badge"
+          :class="{ passed: finding.confidencePassed, flagged: !finding.confidencePassed }"
+        >
+          {{ finding.confidencePassed ? '✓' : '⚠' }}
+          置信度 {{ (finding.confidence * 100).toFixed(0) }}%
+        </span>
+      </div>
+
+      <!-- Feedback buttons -->
+      <div v-if="analysisId" class="feedback-row">
+        <template v-if="feedbackState[findingKey(i)]?.done">
+          <span class="feedback-done">
+            {{ feedbackState[findingKey(i)]?.type === 'CONFIRMED' ? '已确认 ✓' : '已标记误报' }}
+          </span>
+        </template>
+        <template v-else>
+          <button
+            class="feedback-btn confirm"
+            :disabled="feedbackState[findingKey(i)]?.loading"
+            @click="handleFeedback(i, 'CONFIRMED')"
+          >
+            👍 有用
+          </button>
+          <button
+            class="feedback-btn fp"
+            :disabled="feedbackState[findingKey(i)]?.loading"
+            @click="handleFeedback(i, 'FALSE_POSITIVE')"
+          >
+            👎 误报
+          </button>
+        </template>
       </div>
     </div>
   </div>
@@ -161,5 +231,76 @@ const categoryIcons: Record<string, string> = {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-bottom: 8px;
+}
+
+.confidence-row {
+  margin-bottom: 8px;
+}
+
+.confidence-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-family: var(--font-mono);
+}
+
+.confidence-badge.passed {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--risk-low);
+}
+
+.confidence-badge.flagged {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--risk-medium);
+}
+
+.feedback-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.feedback-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.feedback-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-btn.confirm:hover:not(:disabled) {
+  border-color: var(--risk-low);
+  color: var(--risk-low);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.feedback-btn.fp:hover:not(:disabled) {
+  border-color: var(--risk-high);
+  color: var(--risk-high);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.feedback-done {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
 }
 </style>

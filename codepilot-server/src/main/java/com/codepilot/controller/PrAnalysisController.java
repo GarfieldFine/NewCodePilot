@@ -8,7 +8,6 @@ import com.codepilot.model.dto.ApiResponse;
 import com.codepilot.model.dto.PrAnalyzeRequest;
 import com.codepilot.review.AnalysisResult;
 import com.codepilot.service.PrAnalysisService;
-import com.codepilot.sse.SseEmitterService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -55,15 +54,20 @@ public class PrAnalysisController {
 
     @PostMapping(value = "/analyze/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<AgentEvent>> analyzeStream(@Valid @RequestBody PrAnalyzeRequest request) {
+        if (request.getProviders() != null && request.getProviders().size() > 1) {
+            log.info("Multi-provider streaming analysis for: {} with providers: {}",
+                    request.getPrUrl(), request.getProviders());
+            return prAnalysisService.analyzePrStreamMulti(request.getPrUrl(), request.getProviders())
+                    .doOnNext(e -> log.info("SSE OUT {} {}", System.currentTimeMillis(), e.getType()))
+                    .map(event -> ServerSentEvent.<AgentEvent>builder()
+                            .id(event.getTraceId())
+                            .event(event.getType().name())
+                            .data(event)
+                            .build());
+        }
         log.info("Streaming analysis for: {}", request.getPrUrl());
         return prAnalysisService.analyzePrStream(request.getPrUrl(), request.getProvider())
-                .doOnNext(e -> {
-                    log.info(
-                            "SSE OUT {} {}",
-                            System.currentTimeMillis(),
-                            e.getType()
-                    );
-                })
+                .doOnNext(e -> log.info("SSE OUT {} {}", System.currentTimeMillis(), e.getType()))
                 .map(event -> ServerSentEvent.<AgentEvent>builder()
                         .id(event.getTraceId())
                         .event(event.getType().name())

@@ -37,6 +37,11 @@ public class ThreadLocalLeakRule implements Rule {
     }
 
     @Override
+    public double getBaseConfidence() {
+        return 0.60; // context-dependent: thread pool usage varies
+    }
+
+    @Override
     public RuleResult check(String filepath, String content, Map<String, Object> context) {
         if (!isJavaFile(filepath)) return noMatch();
 

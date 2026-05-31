@@ -13,6 +13,8 @@ import AgentStatusBar from '@/components/AgentStatusBar.vue'
 import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import RiskHeatMap from '@/components/RiskHeatMap.vue'
 import RiskFocusPanel from '@/components/RiskFocusPanel.vue'
+import ProviderSwitchBar from '@/components/ProviderSwitchBar.vue'
+import { generateMarkdownReport, downloadMarkdown } from '@/utils/report'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -45,6 +47,13 @@ function handleFileFocus(file: FileAnalysis) {
 function handleFocusClose() {
   focusedFile.value = null
 }
+function handleExport() {
+  if (!store.result) return
+  const md = generateMarkdownReport(store.result)
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+  const filename = `CodePilot-${store.result.owner}-${store.result.repo}-PR${store.result.prNumber}-${ts}.md`
+  downloadMarkdown(md, filename)
+}
 </script>
 
 <template>
@@ -59,9 +68,31 @@ function handleFocusClose() {
         <span class="logo-text">CodePilot</span>
         <span class="logo-dot">AI Review</span>
       </div>
-      <div class="top-status" v-if="store.status && store.status !== 'COMPLETED' && store.status !== 'FAILED'">
-        <span class="status-dot"></span>
-        {{ store.statusMessage || store.currentStage || store.status }}
+      <div class="top-actions">
+        <router-link
+          v-if="store.isMultiProvider && store.providerResults[store.selectedProviders[0]]"
+          to="/comparison"
+          class="compare-btn"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          对比分析
+        </router-link>
+        <button
+          v-if="store.result && store.status === 'COMPLETED'"
+          class="export-btn"
+          @click="handleExport"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          导出报告
+        </button>
+        <div class="top-status" v-if="store.status && store.status !== 'COMPLETED' && store.status !== 'FAILED'">
+          <span class="status-dot"></span>
+          {{ store.statusMessage || store.currentStage || store.status }}
+        </div>
       </div>
     </header>
 
@@ -74,6 +105,9 @@ function handleFocusClose() {
         :chunk-progress="store.chunkProgress"
       />
     </div>
+
+    <!-- Multi-provider switch bar -->
+    <ProviderSwitchBar v-if="store.isMultiProvider" />
 
     <main class="main-grid" :class="{ dimmed: focusedFile !== null }">
       <!-- Left sidebar: PR info + Agent workflow + File list -->
@@ -155,6 +189,7 @@ function handleFocusClose() {
         <RuleFindings
           v-if="store.result?.ruleResults"
           :findings="store.result.ruleResults"
+          :analysis-id="store.result?.analysisId"
         />
       </aside>
     </main>
@@ -229,6 +264,53 @@ function handleFocusClose() {
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compare-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--gradient-hero);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.compare-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+
+.export-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .top-status {

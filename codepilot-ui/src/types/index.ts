@@ -1,6 +1,7 @@
 export interface PrAnalyzeRequest {
   prUrl: string
   provider?: string
+  providers?: string[]
 }
 
 export interface ApiResponse<T> {
@@ -51,6 +52,8 @@ export interface RuleResult {
   suggestion: string
   codeSnippet: string
   matched: boolean
+  confidence?: number
+  confidencePassed?: boolean
 }
 
 export interface RiskScore {
@@ -137,7 +140,8 @@ export type AnalysisStatus =
 export type AgentEventType =
   | 'AGENT_STARTED' | 'AGENT_RUNNING' | 'AGENT_COMPLETED'
   | 'AGENT_FAILED' | 'AGENT_SKIPPED' | 'PIPELINE_STAGE'
-  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE' | 'ERROR'
+  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE'
+  | 'MULTI_PROVIDER_COMPLETE' | 'ERROR'
 
 export interface AgentEvent {
   traceId: string
@@ -177,4 +181,117 @@ export interface PrDetail {
   additions: number
   deletions: number
   changedFiles: number
+}
+
+// Feedback types
+export interface FeedbackSubmitRequest {
+  analysisId: string
+  findingId: string
+  ruleName: string
+  category?: string
+  fileName?: string
+  lineNumber?: number
+  feedbackType: 'CONFIRMED' | 'FALSE_POSITIVE' | 'MISSED_ISSUE'
+  comment?: string
+}
+
+export interface RuleConfidenceResponse {
+  ruleName: string
+  totalHits: number
+  confirmed: number
+  falsePositives: number
+  missedIssues: number
+  precisionRate: number
+  recallEstimate: number
+  minConfidenceThreshold: number
+  enabled: boolean
+}
+
+// History / Trends types
+export interface HistoryItem {
+  analysisId: string
+  prNumber: number
+  prTitle: string
+  author: string
+  riskScore: number
+  totalFindings: number
+  status: string
+  createdAt: string
+}
+
+export interface TrendPoint {
+  date: string
+  avgRiskScore: number
+  avgFindings: number
+  maxRiskScore: number
+  minRiskScore: number
+  prCount: number
+}
+
+export interface TrendData {
+  riskScoreTrend: TrendPoint[]
+  findingsTrend: TrendPoint[]
+  prCountTrend: TrendPoint[]
+  overallAvgRiskScore: number
+  overallAvgFindings: number
+  totalPRsAnalyzed: number
+  trendDays: number
+}
+
+export interface ComparisonResult {
+  current: HistoryItem | null
+  previous: HistoryItem | null
+  riskScoreDelta: number
+  findingsDelta: number
+  resolvedFindings: ComparisonFinding[]
+  newFindings: ComparisonFinding[]
+}
+
+export interface ComparisonFinding {
+  ruleName: string
+  category: string
+  file: string
+  message: string
+  isNew: boolean
+}
+
+export interface HistoryPageData {
+  items: HistoryItem[]
+  total: number
+  page: number
+  size: number
+  totalPages: number
+}
+
+export interface RepoInfo {
+  repoKey: string
+  owner: string
+  repo: string
+}
+
+// Multi-provider comparison types
+export interface ProviderAnalysisResult {
+  providerName: string
+  riskScore: RiskScore
+  aiRawOutput: string
+  tokenUsage?: TokenUsage
+  confidenceScores?: ConfidenceScores
+  agentTimeline?: string[]
+}
+
+export interface MultiProviderResult {
+  analysisId: string
+  prTitle: string
+  prUrl: string
+  prNumber: number
+  owner: string
+  repo: string
+  author: string
+  changedFiles: number
+  additions: number
+  deletions: number
+  ruleResults: RuleResult[]
+  fileAnalysis: FileAnalysis[]
+  repositoryProfile?: RepositoryProfile
+  providerResults: Record<string, ProviderAnalysisResult>
 }
