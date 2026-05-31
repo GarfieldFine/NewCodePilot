@@ -1,8 +1,8 @@
 package com.codepilot.review;
 
+import com.codepilot.agent.AgentEvent;
 import com.codepilot.agent.AgentPipeline;
 import com.codepilot.agent.AgentContext;
-import com.codepilot.agent.AgentExecutor;
 import com.codepilot.agent.AgentPipeline.PipelineStage;
 import com.codepilot.agent.AgentPipeline.PipelineStage.ExecutionMode;
 import com.codepilot.agent.agents.*;
@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
 
@@ -93,25 +94,9 @@ public class ReviewEngine {
                 agentContext.getAnalysisId(), aiProvider.getProviderName());
 
         return Mono.fromCallable(() -> {
-            // Build pipeline stages
-            List<PipelineStage> stages = List.of(
-                    new PipelineStage("Understanding Repository",
-                            List.of(repositoryAnalyzeAgent, diffAnalyzeAgent, contextBuildAgent),
-                            ExecutionMode.SEQUENTIAL),
-                    new PipelineStage("Detecting Risks",
-                            List.of(riskDetectAgent),
-                            ExecutionMode.SEQUENTIAL),
-                    new PipelineStage("Generating AI Review",
-                            List.of(reviewGenerateAgent),
-                            ExecutionMode.SEQUENTIAL),
-                    new PipelineStage("Merging Analysis",
-                            List.of(summaryMergeAgent),
-                            ExecutionMode.SEQUENTIAL)
-            );
+            List<PipelineStage> stages = buildStages();
 
-            // Execute pipeline with SSE event relay
             agentPipeline.execute(stages, agentContext, event -> {
-                // Map agent events to legacy SSE format for backward compatibility
                 relayToSse(agentContext.getAnalysisId(), event);
             });
 
@@ -121,16 +106,15 @@ public class ReviewEngine {
                 return result;
             }
 
-            // Fallback: build result manually (should not normally happen)
             return buildResultLegacy(prInfo, agentContext);
         }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
     }
 
     /**
      * Execute streaming PR analysis using the multi-agent pipeline.
-     * Emits agent lifecycle events + AI tokens as SSE stream.
+     * Emits agent lifecycle events + chunk progress + AI tokens as Flux of AgentEvent.
      */
-    public Flux<String> analyzeStream(PrInfo prInfo, String providerName) {
+    public Flux<AgentEvent> analyzeStream(PrInfo prInfo, String providerName) {
         AgentContext agentContext = AgentContext.from(prInfo, providerName);
         sseService.createEmitter(agentContext.getAnalysisId());
 
@@ -138,7 +122,31 @@ public class ReviewEngine {
         log.info("Starting agent-pipeline stream analysis {} with {}",
                 agentContext.getAnalysisId(), aiProvider.getProviderName());
 
-        List<PipelineStage> stages = List.of(
+        List<PipelineStage> stages = buildStages();
+
+        // Use streaming pipeline so agents can emit CHUNK_PROGRESS + AI_TOKEN events
+        // Offload to boundedElastic to avoid blocking the Netty event loop
+        Flux<AgentEvent> agentEvents = agentPipeline.executeStreaming(stages, agentContext)
+                .subscribeOn(Schedulers.boundedElastic());
+
+        // After agents complete, emit ANALYSIS_COMPLETE with final result
+        Flux<AgentEvent> completionEvent = Flux.defer(() -> {
+            AnalysisResult result = agentContext.getFinalResult();
+            if (result == null) {
+                result = buildResultLegacy(prInfo, agentContext);
+            }
+            return Flux.just(AgentEvent.analysisComplete(agentContext.getAnalysisId(), result));
+        });
+
+        return Flux.concat(agentEvents, completionEvent)
+                .onErrorResume(e -> {
+                    log.error("Agent pipeline stream error: {}", e.getMessage());
+                    return Flux.just(AgentEvent.error(agentContext.getAnalysisId(), e.getMessage()));
+                });
+    }
+
+    private List<PipelineStage> buildStages() {
+        return List.of(
                 new PipelineStage("Understanding Repository",
                         List.of(repositoryAnalyzeAgent, diffAnalyzeAgent, contextBuildAgent),
                         ExecutionMode.SEQUENTIAL),
@@ -152,41 +160,21 @@ public class ReviewEngine {
                         List.of(summaryMergeAgent),
                         ExecutionMode.SEQUENTIAL)
         );
-
-        // Stream agent pipeline events
-        Flux<String> agentEvents = agentPipeline.executeStream(stages, agentContext);
-
-        // After agents complete, build final result and emit complete event
-        Flux<String> completionEvents = Flux.defer(() -> {
-            AnalysisResult result = agentContext.getFinalResult();
-            if (result != null) {
-                return Flux.just(jsonComplete(result));
-            }
-            // Fallback
-            AnalysisResult fallback = buildResultLegacy(prInfo, agentContext);
-            return Flux.just(jsonComplete(fallback));
-        });
-
-        return Flux.concat(agentEvents, completionEvents)
-                .onErrorResume(e -> {
-                    log.error("Agent pipeline stream error: {}", e.getMessage());
-                    return Flux.just(jsonError(e.getMessage()));
-                });
     }
 
     /**
      * Relays agent SSE events to the legacy SseEmitterService for backward compatibility.
      */
-    private void relayToSse(String analysisId, AgentExecutor.SseAgentEvent event) {
-        switch (event.type()) {
-            case "agent_start" -> sseService.emit(analysisId, "AI_REVIEWING",
-                    "[" + event.agentName() + "] " + event.message());
-            case "agent_complete" -> sseService.emit(analysisId, "AI_REVIEWING",
-                    "[OK] " + event.agentName() + " — " + event.message());
-            case "agent_error" -> sseService.emit(analysisId, "AI_REVIEWING",
-                    "[ERROR] " + event.agentName() + " — " + event.message());
-            case "pipeline_stage" -> sseService.emit(analysisId, "BUILDING_CONTEXT",
-                    event.agentName() + (event.message() != null ? ": " + event.message() : ""));
+    private void relayToSse(String analysisId, AgentEvent event) {
+        switch (event.getType()) {
+            case AGENT_STARTED -> sseService.emit(analysisId, "AI_REVIEWING",
+                    "[" + event.getAgentName() + "] " + event.getMessage());
+            case AGENT_COMPLETED -> sseService.emit(analysisId, "AI_REVIEWING",
+                    "[OK] " + event.getAgentName() + " - " + event.getMessage());
+            case AGENT_FAILED -> sseService.emit(analysisId, "AI_REVIEWING",
+                    "[ERROR] " + event.getAgentName() + " - " + event.getMessage());
+            case PIPELINE_STAGE -> sseService.emit(analysisId, "BUILDING_CONTEXT",
+                    event.getAgentName());
         }
     }
 
@@ -244,22 +232,5 @@ public class ReviewEngine {
                     .build());
         }
         return analysis;
-    }
-
-    // --- JSON event helpers (raw JSON, Spring WebFlux adds SSE "data:" prefix) ---
-
-    private String jsonComplete(AnalysisResult result) {
-        String dataJson = cn.hutool.json.JSONUtil.toJsonStr(result);
-        return "{\"type\":\"complete\",\"data\":" + dataJson + "}";
-    }
-
-    private String jsonError(String message) {
-        return "{\"type\":\"error\",\"message\":\"" + escapeJson(message) + "\"}";
-    }
-
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r");
     }
 }

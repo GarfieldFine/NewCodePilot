@@ -1,5 +1,6 @@
 package com.codepilot.controller;
 
+import com.codepilot.agent.AgentEvent;
 import com.codepilot.ai.AiProviderFactory;
 import com.codepilot.cache.AnalysisCacheService;
 import com.codepilot.github.GitHubClient;
@@ -11,6 +12,7 @@ import com.codepilot.sse.SseEmitterService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -52,9 +54,21 @@ public class PrAnalysisController {
     }
 
     @PostMapping(value = "/analyze/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> analyzeStream(@Valid @RequestBody PrAnalyzeRequest request) {
+    public Flux<ServerSentEvent<AgentEvent>> analyzeStream(@Valid @RequestBody PrAnalyzeRequest request) {
         log.info("Streaming analysis for: {}", request.getPrUrl());
-        return prAnalysisService.analyzePrStream(request.getPrUrl(), request.getProvider());
+        return prAnalysisService.analyzePrStream(request.getPrUrl(), request.getProvider())
+                .doOnNext(e -> {
+                    log.info(
+                            "SSE OUT {} {}",
+                            System.currentTimeMillis(),
+                            e.getType()
+                    );
+                })
+                .map(event -> ServerSentEvent.<AgentEvent>builder()
+                        .id(event.getTraceId())
+                        .event(event.getType().name())
+                        .data(event)
+                        .build());
     }
 
     @GetMapping("/detail")

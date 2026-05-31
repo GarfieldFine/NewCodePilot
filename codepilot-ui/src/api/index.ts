@@ -43,6 +43,8 @@ export function analyzePRStream(
     const decoder = new TextDecoder()
     let buffer = ''
 
+    let aiTokenCount = 0
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -56,6 +58,13 @@ export function analyzePRStream(
           try {
             const json = JSON.parse(line.substring(5).trim())
             onEvent(json)
+            // Yield to event loop every 30 AI tokens so Vue can re-render progressively
+            if (json.type === 'AI_TOKEN') {
+              aiTokenCount++
+              if (aiTokenCount % 30 === 0) {
+                await new Promise(resolve => { setTimeout(resolve, 0) })
+              }
+            }
           } catch {
             // skip parse errors on partial chunks
           }

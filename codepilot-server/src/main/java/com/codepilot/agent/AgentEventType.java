@@ -1,0 +1,14 @@
+package com.codepilot.agent;
+
+public enum AgentEventType {
+    AGENT_STARTED,
+    AGENT_RUNNING,
+    AGENT_COMPLETED,
+    AGENT_FAILED,
+    AGENT_SKIPPED,
+    PIPELINE_STAGE,
+    CHUNK_PROGRESS,
+    AI_TOKEN,
+    ANALYSIS_COMPLETE,
+    ERROR
+}

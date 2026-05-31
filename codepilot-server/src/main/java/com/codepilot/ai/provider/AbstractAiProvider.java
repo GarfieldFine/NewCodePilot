@@ -59,6 +59,9 @@ public abstract class AbstractAiProvider implements AiProvider {
                 .bodyValue(requestBody)
                 .retrieve()
                 .bodyToFlux(String.class)
+                .doOnNext(chunk -> {
+                    log.info("RAW_CHUNK => {}", chunk);
+                })
                 .concatMap(this::extractStreamContent)
                 .onErrorResume(e -> {
                     log.error("{} stream error: {}", getProviderName(), e.getMessage());

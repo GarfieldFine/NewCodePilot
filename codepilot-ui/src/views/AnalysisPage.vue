@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '@/stores/analysis'
+import type { FileAnalysis } from '@/types'
 import PrSummary from '@/components/PrSummary.vue'
 import RiskScoreCard from '@/components/RiskScoreCard.vue'
 import RuleFindings from '@/components/RuleFindings.vue'
@@ -11,9 +12,12 @@ import AiThinkingTimeline from '@/components/AiThinkingTimeline.vue'
 import AgentStatusBar from '@/components/AgentStatusBar.vue'
 import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import RiskHeatMap from '@/components/RiskHeatMap.vue'
+import RiskFocusPanel from '@/components/RiskFocusPanel.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
+
+const focusedFile = ref<FileAnalysis | null>(null)
 
 onMounted(() => {
   if (!store.loading && !store.result && !store.prUrl) {
@@ -28,6 +32,18 @@ onUnmounted(() => {
 function handleBack() {
   store.reset()
   router.push('/')
+}
+
+function handleHeatmapSelect(file: FileAnalysis) {
+  focusedFile.value = file
+}
+
+function handleFileFocus(file: FileAnalysis) {
+  focusedFile.value = file
+}
+
+function handleFocusClose() {
+  focusedFile.value = null
 }
 </script>
 
@@ -55,10 +71,11 @@ function handleBack() {
         :active-agents="store.activeAgents"
         :token-usage="store.tokenUsage"
         :status="store.status"
+        :chunk-progress="store.chunkProgress"
       />
     </div>
 
-    <main class="main-grid">
+    <main class="main-grid" :class="{ dimmed: focusedFile !== null }">
       <!-- Left sidebar: PR info + Agent workflow + File list -->
       <aside class="left-sidebar">
         <PrSummary :result="store.result" />
@@ -100,12 +117,14 @@ function handleBack() {
         <RiskHeatMap
           v-if="store.result?.fileAnalysis"
           :files="store.result.fileAnalysis"
+          @select="handleHeatmapSelect"
         />
 
         <!-- File analysis list (condensed below heatmap) -->
         <FileAnalysisList
           v-if="store.result?.fileAnalysis"
           :files="store.result.fileAnalysis"
+          @focus="handleFileFocus"
         />
       </aside>
 
@@ -139,6 +158,15 @@ function handleBack() {
         />
       </aside>
     </main>
+
+    <!-- Risk Focus Mode overlay -->
+    <RiskFocusPanel
+      v-if="focusedFile"
+      :file="focusedFile"
+      :all-files="store.result?.fileAnalysis || []"
+      @close="handleFocusClose"
+      @select-file="(f) => focusedFile = f"
+    />
   </div>
 </template>
 
@@ -240,6 +268,13 @@ function handleBack() {
   max-width: 1600px;
   margin: 0 auto;
   height: calc(100vh - 62px);
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.main-grid.dimmed {
+  opacity: 0.3;
+  filter: blur(2px);
+  pointer-events: none;
 }
 
 .left-sidebar,

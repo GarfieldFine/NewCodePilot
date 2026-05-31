@@ -97,6 +97,7 @@ export interface FileAnalysis {
   deletions: number
   riskLevel: RiskLevel
   findings: RuleResult[]
+  aiFindings?: RiskFinding[]
 }
 
 export interface AnalysisResult {
@@ -133,21 +134,39 @@ export type AnalysisStatus =
   | 'COMPLETED'
   | 'FAILED'
 
+export type AgentEventType =
+  | 'AGENT_STARTED' | 'AGENT_RUNNING' | 'AGENT_COMPLETED'
+  | 'AGENT_FAILED' | 'AGENT_SKIPPED' | 'PIPELINE_STAGE'
+  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE' | 'ERROR'
+
 export interface AgentEvent {
-  type: 'agent_start' | 'agent_complete' | 'agent_error' | 'agent_skip' | 'pipeline_stage'
+  traceId: string
+  type: AgentEventType
   agentName: string
   message: string
+  timestamp: number
+  metadata?: Record<string, any>
 }
 
 export interface SseEvent {
   type: 'status' | 'token' | 'ai_token' | 'complete' | 'error'
-    | 'agent_start' | 'agent_complete' | 'agent_error' | 'agent_skip' | 'pipeline_stage'
+    | AgentEventType
   status?: string
   message?: string
   content?: string
   data?: AnalysisResult
   count?: number
   agentName?: string
+  traceId?: string
+  timestamp?: number
+  metadata?: Record<string, any>
+}
+
+export interface ChunkProgress {
+  current: number
+  total: number
+  fileName?: string
+  status?: string
 }
 
 export interface PrDetail {

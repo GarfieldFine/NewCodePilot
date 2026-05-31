@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  select: [filename: string]
+  select: [file: FileAnalysis]
 }>()
 
 const riskColor: Record<RiskLevel, string> = {
@@ -90,7 +90,7 @@ function getStatusColor(status: string): string {
           background: riskBg[file.riskLevel],
           borderLeftColor: riskColor[file.riskLevel]
         }"
-        @click="emit('select', file.filename)"
+        @click="emit('select', file)"
         :title="`${file.filename} — ${file.riskLevel} (${file.findings.length} findings)`"
       >
         <span
