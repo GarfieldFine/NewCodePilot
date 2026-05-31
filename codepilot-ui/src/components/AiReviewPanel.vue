@@ -2,11 +2,27 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 
+marked.use({ breaks: true, gfm: true })
+
 const props = defineProps<{ content: string; loading: boolean }>()
+
+function preprocessMarkdown(raw: string): string {
+  // Remove repeated separators from chunk merging (3+ consecutive dashes)
+  let text = raw.replace(/\n---\n/g, '\n\n')
+  // Collapse 3+ consecutive newlines into 2
+  text = text.replace(/\n{3,}/g, '\n\n')
+  // Remove common AI preamble patterns
+  text = text.replace(/^(好的|明白了|收到|OK)[，,].*?\n/gm, '')
+  return text.trim()
+}
 
 const renderedHtml = computed(() => {
   if (!props.content) return ''
-  return marked.parse(props.content) as string
+  try {
+    return marked.parse(preprocessMarkdown(props.content)) as string
+  } catch {
+    return props.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
 })
 </script>
 
