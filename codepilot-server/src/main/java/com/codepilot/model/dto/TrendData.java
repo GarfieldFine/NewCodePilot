@@ -22,7 +22,7 @@ public class TrendData {
     public static class TrendPoint {
         private String date;
         private BigDecimal avgRiskScore;
-        private int avgFindings;
+        private BigDecimal avgFindings;
         private int maxRiskScore;
         private int minRiskScore;
         private int prCount;

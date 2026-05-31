@@ -66,5 +66,9 @@ public interface AnalysisRecordMapper extends BaseMapper<AnalysisRecord> {
     /** Find a single analysis record by analysis_id */
     @Select("SELECT * FROM analysis_record WHERE analysis_id = #{analysisId} LIMIT 1")
     AnalysisRecord findByAnalysisId(@Param("analysisId") String analysisId);
+
+    /** Find records with total_findings = 0 for recalculation migration */
+    @Select("SELECT * FROM analysis_record WHERE total_findings = 0 AND analysis_result IS NOT NULL AND analysis_result != ''")
+    List<AnalysisRecord> findRecordsWithZeroFindings();
 }
 

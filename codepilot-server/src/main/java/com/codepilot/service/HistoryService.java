@@ -1,12 +1,13 @@
 package com.codepilot.service;
 
-import cn.hutool.json.JSONObject;
-import cn.hutool.json.JSONUtil;
 import com.codepilot.mapper.AnalysisRecordMapper;
 import com.codepilot.model.dto.ComparisonResult;
 import com.codepilot.model.dto.HistoryItem;
 import com.codepilot.model.dto.TrendData;
 import com.codepilot.model.entity.AnalysisRecord;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -53,7 +54,7 @@ public class HistoryService {
                 .map(row -> TrendData.TrendPoint.builder()
                         .date(String.valueOf(row.get("date")))
                         .avgRiskScore(toBigDecimal(row.get("avg_risk_score")))
-                        .avgFindings(toInt(row.get("avg_findings")))
+                        .avgFindings(toBigDecimal(row.get("avg_findings")))
                         .maxRiskScore(toInt(row.get("max_risk_score")))
                         .minRiskScore(toInt(row.get("min_risk_score")))
                         .prCount(toInt(row.get("pr_count")))
@@ -75,7 +76,7 @@ public class HistoryService {
             for (TrendData.TrendPoint p : points) {
                 double weight = (double) p.getPrCount() / totalPRs;
                 weightedRisk += p.getAvgRiskScore().doubleValue() * weight;
-                weightedFindings += p.getAvgFindings() * weight;
+                weightedFindings += p.getAvgFindings().doubleValue() * weight;
             }
             avgRisk = BigDecimal.valueOf(weightedRisk).setScale(1, RoundingMode.HALF_UP);
             avgFindings = BigDecimal.valueOf(weightedFindings).setScale(1, RoundingMode.HALF_UP);
@@ -136,18 +137,47 @@ public class HistoryService {
         return analysisRecordMapper.findDistinctRepos();
     }
 
-    /** Get full analysis result by analysisId (for exporting reports) */
-    public Map<String, Object> getAnalysisResult(String analysisId) {
+    /** Recalculate total_findings for records where it's 0 by parsing stored JSON */
+    public int recalculateZeroFindings() {
+        List<AnalysisRecord> records = analysisRecordMapper.findRecordsWithZeroFindings();
+        int updated = 0;
+        for (AnalysisRecord record : records) {
+            try {
+                JSONObject json = JSONUtil.parseObj(record.getAnalysisResult());
+                int ruleCount = 0;
+                JSONArray ruleResults = json.getJSONArray("ruleResults");
+                if (ruleResults != null) {
+                    ruleCount = ruleResults.size();
+                }
+                int aiCount = 0;
+                JSONArray fileAnalysis = json.getJSONArray("fileAnalysis");
+                if (fileAnalysis != null) {
+                    for (int i = 0; i < fileAnalysis.size(); i++) {
+                        JSONObject fa = fileAnalysis.getJSONObject(i);
+                        JSONArray aiFindings = fa.getJSONArray("aiFindings");
+                        if (aiFindings != null) {
+                            aiCount += aiFindings.size();
+                        }
+                    }
+                }
+                record.setTotalFindings(ruleCount + aiCount);
+                analysisRecordMapper.updateById(record);
+                updated++;
+            } catch (Exception e) {
+                log.warn("Failed to recalculate findings for {}", record.getAnalysisId(), e);
+            }
+        }
+        log.info("Recalculated total_findings for {} records", updated);
+        return updated;
+    }
+
+    /** Get full analysis result JSON by analysisId (for exporting reports) */
+    public String getAnalysisResultJson(String analysisId) {
         AnalysisRecord record = analysisRecordMapper.findByAnalysisId(analysisId);
         if (record == null) {
             return null;
         }
-        String json = record.getAnalysisResult();
-        if (json == null || json.isEmpty()) {
-            return null;
-        }
-        JSONObject obj = JSONUtil.parseObj(json);
-        return obj.toBean(Map.class);
+        return record.getAnalysisResult();
     }
 
     private HistoryItem toHistoryItem(AnalysisRecord record) {

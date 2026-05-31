@@ -6,8 +6,11 @@ import com.codepilot.model.dto.HistoryItem;
 import com.codepilot.model.dto.TrendData;
 import com.codepilot.service.HistoryService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -63,14 +66,26 @@ public class HistoryController {
         return ApiResponse.success(historyService.getRepos());
     }
 
-    /** Get full analysis result by analysisId (for report export) */
-    @GetMapping("/analysis/{analysisId}")
-    public ApiResponse<Map<String, Object>> getAnalysisResult(
-            @PathVariable String analysisId) {
-        Map<String, Object> result = historyService.getAnalysisResult(analysisId);
-        if (result == null) {
-            return ApiResponse.error(404, "Analysis not found");
-        }
+    /** Recalculate total_findings for existing records with zero findings */
+    @PostMapping("/history/recalculate")
+    public ApiResponse<Map<String, Object>> recalculateFindings() {
+        int updated = historyService.recalculateZeroFindings();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("updated", updated);
+        result.put("message", "Recalculated total_findings for " + updated + " records");
         return ApiResponse.success(result);
+    }
+
+    /** Get full analysis result JSON by analysisId (for report export) */
+    @GetMapping(value = "/analysis/{analysisId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> getAnalysisResult(
+            @PathVariable String analysisId) {
+        String json = historyService.getAnalysisResultJson(analysisId);
+        if (json == null || json.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json);
     }
 }

@@ -14,6 +14,7 @@ import com.codepilot.model.entity.EvaluationSample;
 import com.codepilot.model.entity.RuleConfidence;
 import com.codepilot.model.entity.RuleFeedback;
 import com.codepilot.review.AnalysisResult;
+import com.codepilot.review.FileAnalysis;
 import com.codepilot.rule.RuleEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -148,7 +149,7 @@ public class RuleFeedbackService {
         record.setPrUrl(result.getPrUrl());
         record.setAuthor(result.getAuthor());
         record.setStatus(result.getStatus() != null ? result.getStatus().name() : "COMPLETED");
-        record.setTotalFindings(result.getRuleResults() != null ? result.getRuleResults().size() : 0);
+        record.setTotalFindings(countAllFindings(result));
         record.setRiskScore(result.getRiskScore() != null ? result.getRiskScore().getTotalScore() : 0);
         record.setAnalysisResult(JSONUtil.toJsonStr(result));
         analysisRecordMapper.insert(record);
@@ -168,7 +169,7 @@ public class RuleFeedbackService {
         record.setPrUrl(result.getPrUrl());
         record.setAuthor(result.getAuthor());
         record.setStatus("COMPLETED");
-        record.setTotalFindings(result.getRuleResults() != null ? result.getRuleResults().size() : 0);
+        record.setTotalFindings(countAllFindings(result));
 
         int riskScore = 0;
         if (result.getProviderResults() != null && !result.getProviderResults().isEmpty()) {
@@ -182,6 +183,32 @@ public class RuleFeedbackService {
         record.setAnalysisResult(JSONUtil.toJsonStr(result));
         analysisRecordMapper.insert(record);
         log.info("Multi-provider analysis record saved: {}", result.getAnalysisId());
+    }
+
+    private int countAllFindings(AnalysisResult result) {
+        int count = 0;
+        if (result.getRuleResults() != null) {
+            count += result.getRuleResults().size();
+        }
+        if (result.getFileAnalysis() != null) {
+            for (FileAnalysis fa : result.getFileAnalysis()) {
+                if (fa.getAiFindings() != null) count += fa.getAiFindings().size();
+            }
+        }
+        return count;
+    }
+
+    private int countAllFindings(MultiProviderResult result) {
+        int count = 0;
+        if (result.getRuleResults() != null) {
+            count += result.getRuleResults().size();
+        }
+        if (result.getFileAnalysis() != null) {
+            for (FileAnalysis fa : result.getFileAnalysis()) {
+                if (fa.getAiFindings() != null) count += fa.getAiFindings().size();
+            }
+        }
+        return count;
     }
 
     private void recalculateRuleConfidence(String ruleName) {
