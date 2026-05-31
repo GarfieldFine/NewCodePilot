@@ -149,6 +149,19 @@ public class AgentEvent {
                 .build();
     }
 
+    public static AgentEvent multiProviderComplete(String traceId, Object result) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("result", result);
+        return AgentEvent.builder()
+                .traceId(traceId)
+                .type(AgentEventType.MULTI_PROVIDER_COMPLETE)
+                .agentName("ReviewEngine")
+                .message("Multi-provider comparison complete")
+                .timestamp(System.currentTimeMillis())
+                .metadata(meta)
+                .build();
+    }
+
     /**
      * Convert to legacy JSON format for backward compatibility with SseEmitterService.
      */

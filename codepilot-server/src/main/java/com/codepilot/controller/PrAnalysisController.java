@@ -54,6 +54,16 @@ public class PrAnalysisController {
 
     @PostMapping(value = "/analyze/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<AgentEvent>> analyzeStream(@Valid @RequestBody PrAnalyzeRequest request) {
+        if (request.getProviders() != null && request.getProviders().size() > 1) {
+            log.info("Multi-provider streaming analysis for: {} with providers: {}",
+                    request.getPrUrl(), request.getProviders());
+            return prAnalysisService.analyzePrStreamMulti(request.getPrUrl(), request.getProviders())
+                    .map(event -> ServerSentEvent.<AgentEvent>builder()
+                            .id(event.getTraceId())
+                            .event(event.getType().name())
+                            .data(event)
+                            .build());
+        }
         log.info("Streaming analysis for: {}", request.getPrUrl());
         return prAnalysisService.analyzePrStream(request.getPrUrl(), request.getProvider())
                 .map(event -> ServerSentEvent.<AgentEvent>builder()

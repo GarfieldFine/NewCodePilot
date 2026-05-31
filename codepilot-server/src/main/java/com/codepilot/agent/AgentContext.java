@@ -118,4 +118,28 @@ public class AgentContext {
     public void setAnalysisId(String analysisId) { this.analysisId = analysisId; }
 
     public Map<String, Object> getMetadata() { return metadata; }
+
+    /**
+     * Clone this context for a different AI provider.
+     * Shared state from stages 1-2 is defensively copied; provider-specific state is reset.
+     */
+    public AgentContext cloneForProvider(String providerName) {
+        AgentContext clone = new AgentContext();
+        clone.prInfo = this.prInfo;
+        clone.providerName = providerName;
+        clone.analysisId = this.analysisId;
+        clone.languages = new ArrayList<>(this.languages);
+        clone.frameworks = new ArrayList<>(this.frameworks);
+        clone.projectType = this.projectType;
+        clone.repositoryContext = new ConcurrentHashMap<>(this.repositoryContext);
+        clone.diffAnalysis = new ConcurrentHashMap<>(this.diffAnalysis);
+        clone.semanticContext = new ConcurrentHashMap<>(this.semanticContext);
+        clone.ruleResults = new ArrayList<>(this.ruleResults);
+        clone.aiRiskFindings = new ArrayList<>(this.aiRiskFindings);
+        clone.metadata = new ConcurrentHashMap<>(this.metadata);
+        clone.chunkReviews = Collections.synchronizedList(new ArrayList<>());
+        clone.riskScore = null;
+        clone.finalResult = null;
+        return clone;
+    }
 }

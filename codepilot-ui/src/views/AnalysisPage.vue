@@ -13,6 +13,7 @@ import AgentStatusBar from '@/components/AgentStatusBar.vue'
 import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import RiskHeatMap from '@/components/RiskHeatMap.vue'
 import RiskFocusPanel from '@/components/RiskFocusPanel.vue'
+import ProviderComparisonPanel from '@/components/ProviderComparisonPanel.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -159,6 +160,14 @@ function handleFocusClose() {
         />
       </aside>
     </main>
+
+    <!-- Multi-provider comparison panel -->
+    <ProviderComparisonPanel
+      v-if="store.isMultiProvider"
+      :providers="store.selectedProviders"
+      :results="store.providerResults"
+      :streams="store.providerStreams"
+    />
 
     <!-- Risk Focus Mode overlay -->
     <RiskFocusPanel

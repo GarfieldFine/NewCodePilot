@@ -125,7 +125,7 @@ public class ReviewGenerateAgent implements Agent {
                 CompletableFuture<List<String>> streamFuture = aiProvider
                         .chatStream(systemPrompt, userPrompt)
                         .doOnNext(token -> {
-                            log.info("TOKEN => [{}]", token);
+//                            log.info("TOKEN => [{}]", token);
                             tokenQueue.add(token);
                         })
                         .collectList()

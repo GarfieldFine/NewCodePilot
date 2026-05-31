@@ -10,5 +10,6 @@ public enum AgentEventType {
     CHUNK_PROGRESS,
     AI_TOKEN,
     ANALYSIS_COMPLETE,
+    MULTI_PROVIDER_COMPLETE,
     ERROR
 }

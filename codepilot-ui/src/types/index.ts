@@ -1,6 +1,7 @@
 export interface PrAnalyzeRequest {
   prUrl: string
   provider?: string
+  providers?: string[]
 }
 
 export interface ApiResponse<T> {
@@ -136,7 +137,8 @@ export type AnalysisStatus =
 export type AgentEventType =
   | 'AGENT_STARTED' | 'AGENT_RUNNING' | 'AGENT_COMPLETED'
   | 'AGENT_FAILED' | 'AGENT_SKIPPED' | 'PIPELINE_STAGE'
-  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE' | 'ERROR'
+  | 'CHUNK_PROGRESS' | 'AI_TOKEN' | 'ANALYSIS_COMPLETE'
+  | 'MULTI_PROVIDER_COMPLETE' | 'ERROR'
 
 export interface AgentEvent {
   traceId: string
@@ -262,4 +264,31 @@ export interface RepoInfo {
   repoKey: string
   owner: string
   repo: string
+}
+
+// Multi-provider comparison types
+export interface ProviderAnalysisResult {
+  providerName: string
+  riskScore: RiskScore
+  aiRawOutput: string
+  tokenUsage?: TokenUsage
+  confidenceScores?: ConfidenceScores
+  agentTimeline?: string[]
+}
+
+export interface MultiProviderResult {
+  analysisId: string
+  prTitle: string
+  prUrl: string
+  prNumber: number
+  owner: string
+  repo: string
+  author: string
+  changedFiles: number
+  additions: number
+  deletions: number
+  ruleResults: RuleResult[]
+  fileAnalysis: FileAnalysis[]
+  repositoryProfile?: RepositoryProfile
+  providerResults: Record<string, ProviderAnalysisResult>
 }

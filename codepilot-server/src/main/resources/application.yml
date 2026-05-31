@@ -84,6 +84,12 @@ ai:
       model: qwen-plus
       max-tokens: 4096
       temperature: 0.3
+    siliconflow:
+      api-key: ${SILICONFLOW_API_KEY:}
+      api-url: https://api.siliconflow.cn/v1/chat/completions
+      model: Qwen/Qwen3.6-35B-A3B
+      max-tokens: 4096
+      temperature: 0.3
 
 # Review Config
 review:

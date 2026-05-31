@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '@/stores/analysis'
+import ProviderSelector from '@/components/ProviderSelector.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -9,6 +10,7 @@ const store = useAnalysisStore()
 const prUrl = ref('')
 const loading = ref(false)
 const error = ref('')
+const selectedProviders = ref<string[]>(['deepseek'])
 
 const examplePRs = [
   { label: 'Spring Boot PR', url: 'https://github.com/spring-projects/spring-boot/pull/40000' },
@@ -35,7 +37,7 @@ function startAnalysis() {
   // Navigate first so the analysis page renders immediately
   router.push('/analysis')
   // Start SSE streaming — AnalysisPage will pick up store.prUrl
-  store.startStreaming(url)
+  store.startStreaming(url, selectedProviders.value)
   // loading will be set to false by store when streaming completes or errors
   setTimeout(() => { loading.value = false }, 500)
 }
@@ -90,6 +92,8 @@ function startAnalysis() {
         </button>
         <p v-if="error" class="input-error">{{ error }}</p>
       </div>
+
+      <ProviderSelector v-model="selectedProviders" />
 
       <div class="examples">
         <span class="examples-label">示例 PR:</span>

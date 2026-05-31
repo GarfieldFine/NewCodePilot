@@ -55,6 +55,15 @@ public class PrAnalysisService {
                 });
     }
 
+    public Flux<AgentEvent> analyzePrStreamMulti(String prUrl, java.util.List<String> providerNames) {
+        return gitHubClient.fetchPrDetail(prUrl)
+                .flatMapMany(prInfo -> reviewEngine.analyzeStreamMulti(prInfo, providerNames))
+                .onErrorResume(e -> {
+                    log.error("Multi-provider stream analysis error: {}", e.getMessage());
+                    return Flux.just(AgentEvent.error("unknown", e.getMessage()));
+                });
+    }
+
     private Mono<AnalysisResult> doAnalyze(PrInfo prInfo, String providerName,
                                             GitHubClient.PrUrlInfo urlInfo) {
         return reviewEngine.analyze(prInfo, providerName)

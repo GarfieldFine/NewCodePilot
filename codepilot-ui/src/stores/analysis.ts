@@ -21,6 +21,12 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const agentLog = ref<string[]>([])
   const chunkProgress = ref<ChunkProgress | null>(null)
 
+  // Multi-provider state
+  const selectedProviders = ref<string[]>([])
+  const providerResults = ref<Record<string, AnalysisResult>>({})
+  const providerStreams = ref<Record<string, string>>({})
+  const isMultiProvider = computed(() => selectedProviders.value.length > 1)
+
   const completedAgents = computed(() =>
     agentEvents.value.filter(e => e.type === 'AGENT_COMPLETED').map(e => e.agentName)
   )
@@ -51,16 +57,29 @@ export const useAnalysisStore = defineStore('analysis', () => {
     confidence.value = null
     agentLog.value = []
     chunkProgress.value = null
+    selectedProviders.value = []
+    providerResults.value = {}
+    providerStreams.value = {}
   }
 
-  function startStreaming(url: string, provider?: string) {
+  function startStreaming(url: string, providerOrProviders?: string | string[]) {
     reset()
     prUrl.value = url
     loading.value = true
     status.value = 'PENDING'
 
+    let provider: string | undefined
+    let providers: string[] | undefined
+    if (Array.isArray(providerOrProviders)) {
+      providers = providerOrProviders
+      selectedProviders.value = providers
+    } else {
+      provider = providerOrProviders
+      if (provider) selectedProviders.value = [provider]
+    }
+
     abortController = analyzePRStream(
-      { prUrl: url, provider },
+      { prUrl: url, provider, providers },
       (event: SseEvent) => handleSseEvent(event),
       (err: Error) => {
         error.value = err.message || 'Connection failed'
@@ -142,6 +161,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     }
 
     if (etype === 'CHUNK_PROGRESS') {
+      const pName = event.metadata?.providerName as string | undefined
       if (event.metadata) {
         chunkProgress.value = {
           current: (event.metadata.chunkIndex ?? 0) + 1,
@@ -154,13 +174,26 @@ export const useAnalysisStore = defineStore('analysis', () => {
     }
 
     if (etype === 'AI_TOKEN') {
+      const pName = event.metadata?.providerName as string | undefined
       if (event.metadata?.content) {
-        aiStream.value += event.metadata.content
+        if (pName && selectedProviders.value.length > 1) {
+          if (!providerStreams.value[pName]) providerStreams.value[pName] = ''
+          providerStreams.value[pName] += event.metadata.content
+        } else {
+          aiStream.value += event.metadata.content
+        }
       }
       return
     }
 
     if (etype === 'ANALYSIS_COMPLETE') {
+      const pName = event.metadata?.providerName as string | undefined
+      if (pName && selectedProviders.value.length > 1) {
+        if (event.metadata?.result) {
+          providerResults.value = { ...providerResults.value, [pName]: event.metadata.result as AnalysisResult }
+        }
+        return
+      }
       if (event.metadata?.result) {
         result.value = event.metadata.result as AnalysisResult
         if (event.metadata.result.tokenUsage) {
@@ -178,6 +211,33 @@ export const useAnalysisStore = defineStore('analysis', () => {
     if (etype === 'ERROR') {
       error.value = event.message || 'Unknown error'
       status.value = 'FAILED'
+      loading.value = false
+      return
+    }
+
+    if (etype === 'MULTI_PROVIDER_COMPLETE') {
+      if (event.metadata?.result) {
+        const multiResult = event.metadata.result as any
+        if (multiResult.providerResults) {
+          for (const [pName, pResult] of Object.entries(multiResult.providerResults)) {
+            const pr = pResult as any
+            providerStreams.value[pName] = pr.aiRawOutput || ''
+          }
+        }
+        const primaryProvider = Object.keys(multiResult.providerResults || {})[0]
+        const primaryResult = multiResult.providerResults?.[primaryProvider]
+        if (primaryResult) {
+          result.value = {
+            ...multiResult,
+            riskScore: primaryResult.riskScore,
+            aiRawOutput: primaryResult.aiRawOutput,
+            tokenUsage: primaryResult.tokenUsage,
+            confidenceScores: primaryResult.confidenceScores,
+            agentTimeline: primaryResult.agentTimeline
+          } as AnalysisResult
+        }
+      }
+      status.value = 'COMPLETED'
       loading.value = false
       return
     }
@@ -222,6 +282,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     result, status, statusMessage, aiStream, loading, error, prUrl,
     sseStatusHistory, agentEvents, activeAgents, tokenUsage, confidence,
     completedAgents, failedAgents, currentStage, agentLog, chunkProgress,
+    selectedProviders, providerResults, providerStreams, isMultiProvider,
     reset, startStreaming, handleSseEvent
   }
 })
