@@ -62,4 +62,15 @@ public class HistoryController {
     public ApiResponse<List<Map<String, Object>>> getRepos() {
         return ApiResponse.success(historyService.getRepos());
     }
+
+    /** Get full analysis result by analysisId (for report export) */
+    @GetMapping("/analysis/{analysisId}")
+    public ApiResponse<Map<String, Object>> getAnalysisResult(
+            @PathVariable String analysisId) {
+        Map<String, Object> result = historyService.getAnalysisResult(analysisId);
+        if (result == null) {
+            return ApiResponse.error(404, "Analysis not found");
+        }
+        return ApiResponse.success(result);
+    }
 }

@@ -133,3 +133,8 @@ export async function getRepos(): Promise<RepoInfo[]> {
   return res.data.data
 }
 
+export async function getAnalysisResult(analysisId: string): Promise<AnalysisResult | null> {
+  const res = await http.get<ApiResponse<AnalysisResult>>(`/analysis/${analysisId}`)
+  return res.data.data
+}
+

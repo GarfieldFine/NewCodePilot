@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getHistory, getTrends, getRecentHistory, getRepos } from '@/api'
+import { getHistory, getTrends, getRecentHistory, getRepos, getAnalysisResult } from '@/api'
 import type { HistoryItem, TrendPoint, TrendData, RepoInfo, HistoryPageData } from '@/types'
+import { generateMarkdownReport, downloadMarkdown } from '@/utils/report'
 
 const router = useRouter()
 
@@ -127,6 +128,23 @@ function goToAnalysis(item: HistoryItem) {
   if (item.analysisId) {
     router.push({ path: '/analysis', query: { analysisId: item.analysisId } })
   }
+}
+
+const exportingId = ref<string | null>(null)
+
+async function exportHistoryReport(item: HistoryItem) {
+  if (!item.analysisId || exportingId.value) return
+  exportingId.value = item.analysisId
+  try {
+    const result = await getAnalysisResult(item.analysisId)
+    if (result) {
+      const md = generateMarkdownReport(result)
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+      const filename = `CodePilot-PR${item.prNumber}-${ts}.md`
+      downloadMarkdown(md, filename)
+    }
+  } catch { /* download failed */ }
+  exportingId.value = null
 }
 </script>
 
@@ -295,6 +313,7 @@ function goToAnalysis(item: HistoryItem) {
                 <th>风险分</th>
                 <th>发现数</th>
                 <th>时间</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -309,9 +328,14 @@ function goToAnalysis(item: HistoryItem) {
                 </td>
                 <td class="mono">{{ item.totalFindings }}</td>
                 <td class="time-cell">{{ formatDateTime(item.createdAt) }}</td>
+                <td>
+                  <button class="row-export-btn" @click.stop="exportHistoryReport(item)" :disabled="exportingId === item.analysisId">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  </button>
+                </td>
               </tr>
               <tr v-if="!history?.items?.length">
-                <td colspan="6" class="empty-row">暂无历史记录</td>
+                <td colspan="7" class="empty-row">暂无历史记录</td>
               </tr>
             </tbody>
           </table>
@@ -332,6 +356,7 @@ function goToAnalysis(item: HistoryItem) {
               <th>风险分</th>
               <th>发现数</th>
               <th>时间</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -346,6 +371,11 @@ function goToAnalysis(item: HistoryItem) {
               </td>
               <td class="mono">{{ item.totalFindings }}</td>
               <td class="time-cell">{{ formatDateTime(item.createdAt) }}</td>
+              <td>
+                <button class="row-export-btn" @click.stop="exportHistoryReport(item)" :disabled="exportingId === item.analysisId">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -653,6 +683,32 @@ function goToAnalysis(item: HistoryItem) {
   text-align: center;
   color: var(--text-muted);
   padding: 32px 14px !important;
+}
+
+.row-export-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.row-export-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.row-export-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>
 

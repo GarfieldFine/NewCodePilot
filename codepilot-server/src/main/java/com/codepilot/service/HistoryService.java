@@ -1,5 +1,6 @@
 package com.codepilot.service;
 
+import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.codepilot.mapper.AnalysisRecordMapper;
 import com.codepilot.model.dto.ComparisonResult;
@@ -133,6 +134,20 @@ public class HistoryService {
     /** List tracked repos */
     public List<Map<String, Object>> getRepos() {
         return analysisRecordMapper.findDistinctRepos();
+    }
+
+    /** Get full analysis result by analysisId (for exporting reports) */
+    public Map<String, Object> getAnalysisResult(String analysisId) {
+        AnalysisRecord record = analysisRecordMapper.findByAnalysisId(analysisId);
+        if (record == null) {
+            return null;
+        }
+        String json = record.getAnalysisResult();
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        JSONObject obj = JSONUtil.parseObj(json);
+        return obj.toBean(Map.class);
     }
 
     private HistoryItem toHistoryItem(AnalysisRecord record) {

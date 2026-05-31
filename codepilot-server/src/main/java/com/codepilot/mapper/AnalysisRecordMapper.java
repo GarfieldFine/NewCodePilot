@@ -62,5 +62,9 @@ public interface AnalysisRecordMapper extends BaseMapper<AnalysisRecord> {
     List<AnalysisRecord> findAllByPr(@Param("owner") String owner,
                                      @Param("repo") String repo,
                                      @Param("prNumber") Integer prNumber);
+
+    /** Find a single analysis record by analysis_id */
+    @Select("SELECT * FROM analysis_record WHERE analysis_id = #{analysisId} LIMIT 1")
+    AnalysisRecord findByAnalysisId(@Param("analysisId") String analysisId);
 }
 
