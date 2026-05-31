@@ -13,7 +13,7 @@ import AgentStatusBar from '@/components/AgentStatusBar.vue'
 import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import RiskHeatMap from '@/components/RiskHeatMap.vue'
 import RiskFocusPanel from '@/components/RiskFocusPanel.vue'
-import ProviderComparisonPanel from '@/components/ProviderComparisonPanel.vue'
+import ProviderSwitchBar from '@/components/ProviderSwitchBar.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -60,9 +60,21 @@ function handleFocusClose() {
         <span class="logo-text">CodePilot</span>
         <span class="logo-dot">AI Review</span>
       </div>
-      <div class="top-status" v-if="store.status && store.status !== 'COMPLETED' && store.status !== 'FAILED'">
-        <span class="status-dot"></span>
-        {{ store.statusMessage || store.currentStage || store.status }}
+      <div class="top-actions">
+        <router-link
+          v-if="store.isMultiProvider && store.providerResults[store.selectedProviders[0]]"
+          to="/comparison"
+          class="compare-btn"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          对比分析
+        </router-link>
+        <div class="top-status" v-if="store.status && store.status !== 'COMPLETED' && store.status !== 'FAILED'">
+          <span class="status-dot"></span>
+          {{ store.statusMessage || store.currentStage || store.status }}
+        </div>
       </div>
     </header>
 
@@ -75,6 +87,9 @@ function handleFocusClose() {
         :chunk-progress="store.chunkProgress"
       />
     </div>
+
+    <!-- Multi-provider switch bar -->
+    <ProviderSwitchBar v-if="store.isMultiProvider" />
 
     <main class="main-grid" :class="{ dimmed: focusedFile !== null }">
       <!-- Left sidebar: PR info + Agent workflow + File list -->
@@ -161,14 +176,6 @@ function handleFocusClose() {
       </aside>
     </main>
 
-    <!-- Multi-provider comparison panel -->
-    <ProviderComparisonPanel
-      v-if="store.isMultiProvider"
-      :providers="store.selectedProviders"
-      :results="store.providerResults"
-      :streams="store.providerStreams"
-    />
-
     <!-- Risk Focus Mode overlay -->
     <RiskFocusPanel
       v-if="focusedFile"
@@ -238,6 +245,31 @@ function handleFocusClose() {
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compare-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--gradient-hero);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.compare-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .top-status {

@@ -26,6 +26,32 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const providerResults = ref<Record<string, AnalysisResult>>({})
   const providerStreams = ref<Record<string, string>>({})
   const isMultiProvider = computed(() => selectedProviders.value.length > 1)
+  const displayProvider = ref('')
+
+  function switchProvider(name: string) {
+    displayProvider.value = name
+    const saved = providerResults.value[name]
+    if (saved) {
+      // Merge provider-specific fields into result, preserving shared fields
+      if (result.value) {
+        result.value = {
+          ...result.value,
+          riskScore: saved.riskScore,
+          aiRawOutput: saved.aiRawOutput,
+          tokenUsage: saved.tokenUsage,
+          confidenceScores: saved.confidenceScores,
+          agentTimeline: saved.agentTimeline
+        }
+      } else {
+        result.value = saved
+      }
+      if (saved.tokenUsage) tokenUsage.value = saved.tokenUsage
+      if (saved.confidenceScores) confidence.value = saved.confidenceScores
+      aiStream.value = saved.aiRawOutput || ''
+    } else {
+      aiStream.value = providerStreams.value[name] || ''
+    }
+  }
 
   const completedAgents = computed(() =>
     agentEvents.value.filter(e => e.type === 'AGENT_COMPLETED').map(e => e.agentName)
@@ -60,6 +86,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     selectedProviders.value = []
     providerResults.value = {}
     providerStreams.value = {}
+    displayProvider.value = ''
   }
 
   function startStreaming(url: string, providerOrProviders?: string | string[]) {
@@ -179,6 +206,10 @@ export const useAnalysisStore = defineStore('analysis', () => {
         if (pName && selectedProviders.value.length > 1) {
           if (!providerStreams.value[pName]) providerStreams.value[pName] = ''
           providerStreams.value[pName] += event.metadata.content
+          // Also stream to main view if this provider is currently displayed
+          if (pName === displayProvider.value) {
+            aiStream.value += event.metadata.content
+          }
         } else {
           aiStream.value += event.metadata.content
         }
@@ -191,6 +222,10 @@ export const useAnalysisStore = defineStore('analysis', () => {
       if (pName && selectedProviders.value.length > 1) {
         if (event.metadata?.result) {
           providerResults.value = { ...providerResults.value, [pName]: event.metadata.result as AnalysisResult }
+        }
+        // Auto-display first completed provider
+        if (!displayProvider.value) {
+          switchProvider(pName)
         }
         return
       }
@@ -221,20 +256,35 @@ export const useAnalysisStore = defineStore('analysis', () => {
         if (multiResult.providerResults) {
           for (const [pName, pResult] of Object.entries(multiResult.providerResults)) {
             const pr = pResult as any
+            providerResults.value = {
+              ...providerResults.value,
+              [pName]: {
+                analysisId: multiResult.analysisId,
+                prTitle: multiResult.prTitle,
+                prUrl: multiResult.prUrl,
+                prNumber: multiResult.prNumber,
+                owner: multiResult.owner,
+                repo: multiResult.repo,
+                author: multiResult.author,
+                changedFiles: multiResult.changedFiles,
+                additions: multiResult.additions,
+                deletions: multiResult.deletions,
+                ruleResults: multiResult.ruleResults,
+                fileAnalysis: multiResult.fileAnalysis,
+                repositoryProfile: multiResult.repositoryProfile,
+                riskScore: pr.riskScore,
+                aiRawOutput: pr.aiRawOutput,
+                tokenUsage: pr.tokenUsage,
+                confidenceScores: pr.confidenceScores,
+                agentTimeline: pr.agentTimeline
+              } as AnalysisResult
+            }
             providerStreams.value[pName] = pr.aiRawOutput || ''
           }
         }
-        const primaryProvider = Object.keys(multiResult.providerResults || {})[0]
-        const primaryResult = multiResult.providerResults?.[primaryProvider]
-        if (primaryResult) {
-          result.value = {
-            ...multiResult,
-            riskScore: primaryResult.riskScore,
-            aiRawOutput: primaryResult.aiRawOutput,
-            tokenUsage: primaryResult.tokenUsage,
-            confidenceScores: primaryResult.confidenceScores,
-            agentTimeline: primaryResult.agentTimeline
-          } as AnalysisResult
+        const firstProvider = Object.keys(multiResult.providerResults || {})[0]
+        if (firstProvider && !displayProvider.value) {
+          switchProvider(firstProvider)
         }
       }
       status.value = 'COMPLETED'
@@ -283,6 +333,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     sseStatusHistory, agentEvents, activeAgents, tokenUsage, confidence,
     completedAgents, failedAgents, currentStage, agentLog, chunkProgress,
     selectedProviders, providerResults, providerStreams, isMultiProvider,
+    displayProvider, switchProvider,
     reset, startStreaming, handleSseEvent
   }
 })
