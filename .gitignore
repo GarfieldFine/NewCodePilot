@@ -1,0 +1,18 @@
+# ---- 构建产物 ----
+**/target/
+codepilot-server/target/
+
+# ---- Node 依赖 ----
+**/node_modules/
+codepilot-ui/node_modules/
+
+# ---- IDE ----
+**/.idea/
+*.iml
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+
+# ---- 日志 ----
+*.log

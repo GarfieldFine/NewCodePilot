@@ -87,7 +87,7 @@ public class ReviewEngine {
      * Maintains backward compatibility with existing PrAnalysisService.
      */
     public Mono<AnalysisResult> analyze(PrInfo prInfo, String providerName) {
-        AiProvider aiProvider = aiProviderFactory.getProvider(providerName);
+        AiProvider aiProvider = aiProviderFactory.getProvider(providerName); // 工厂
         AgentContext agentContext = AgentContext.from(prInfo, providerName);
         sseService.createEmitter(agentContext.getAnalysisId());
 

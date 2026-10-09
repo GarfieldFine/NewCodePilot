@@ -1,0 +1,69 @@
+flowchart TB
+    subgraph UI["CodePilot UI (Vue 3)"]
+        direction LR
+        HomePage["HomePage\nPR 输入"]
+        AnalysisPage["AnalysisPage\n3 栏看板"]
+        HistoryPage["HistoryPage\n趋势图表"]
+        Comparison["Comparison\n7 维对比"]
+    end
+
+    subgraph API["Spring Boot 3.2 (WebFlux)"]
+        PrAnalysisController["PrAnalysisController\nSSE 流式响应"]
+        HistoryController["HistoryController\n历史记录"]
+        RuleFeedbackController["RuleFeedbackController\n误报反馈"]
+    end
+
+    subgraph Pipeline["6-Agent Analysis Pipeline"]
+        direction LR
+        A1["RepoAnalyzer\n仓库分析"]
+        A2["DiffAnalyzer\n差异解析"]
+        A3["ContextBuilder\n上下文构建"]
+        A4["RiskDetector\n风险检测"]
+        A5["AIReviewer\nLLM 审查"]
+        A6["SummaryMerger\n汇总合并"]
+
+        A1 --> A2 --> A3 --> A4 --> A5 --> A6
+    end
+
+    subgraph Services["核心服务"]
+        GitHubClient["GitHub Client\nREST API"]
+        AIProviderFactory["AI Provider Factory\n5 种模型适配"]
+        RuleEngine["Rule Engine\n10+ 静态规则"]
+        SseEmitter["SSE Emitter\n实时事件推送"]
+    end
+
+    subgraph AIProviders["AI 提供商"]
+        direction LR
+        OpenAI["OpenAI"]
+        DeepSeek["DeepSeek"]
+        Claude["Claude"]
+        Qwen["Qwen"]
+        SiliconFlow["SiliconFlow"]
+    end
+
+    subgraph Data["数据层"]
+        MySQL[("MySQL 8\nanalysis_record\nrule_feedback\nrule_confidence")]
+        Redis[("Redis\nPR diff cache\nSession cache")]
+    end
+
+    HomePage --> PrAnalysisController
+    AnalysisPage --> PrAnalysisController
+    HistoryPage --> HistoryController
+    Comparison --> PrAnalysisController
+
+    PrAnalysisController --> Pipeline
+    HistoryController --> MySQL
+    RuleFeedbackController --> MySQL
+
+    Pipeline --> Services
+    A1 --> GitHubClient
+    A4 --> RuleEngine
+    A5 --> AIProviderFactory
+    Pipeline --> SseEmitter
+
+    AIProviderFactory --> AIProviders
+    SseEmitter -.->|SSE Stream| UI
+
+    GitHubClient -->|HTTPS| GitHub[("GitHub\nPR / Repo API")]
+    Services --> MySQL
+    Services --> Redis
